@@ -5,6 +5,7 @@ dist/
 .env
 .env.*
 !.env.example
+request.json
 firebase-debug.log
 firestore-debug.log
 ui-debug.log
