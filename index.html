@@ -8,9 +8,54 @@
     <meta name="description" content="Queue — kooliürituse tehnilise tiimi tööruum." />
     <link rel="icon" type="image/svg+xml" href="./queue-icon.svg" />
     <title>Queue — Show workspace</title>
+    <style>
+      .queue-boot-screen{box-sizing:border-box;min-height:100vh;min-height:100dvh;display:grid;place-items:center;padding:24px;background:#090b0e;color:#e8edf2;font:15px/1.5 system-ui,sans-serif}
+      .queue-boot-card{width:min(100%,420px);padding:24px;border:1px solid #303741;background:#11151a}
+      .queue-boot-brand{margin:0 0 26px;color:#ff7474;font:700 12px/1.2 ui-monospace,monospace;letter-spacing:2px}
+      .queue-boot-screen h1{margin:0 0 8px;font-size:20px}
+      .queue-boot-screen p:last-child{margin:0;color:#aeb7c1}
+      .queue-runtime-error{position:fixed;z-index:2147483647;top:12px;left:12px;right:12px;max-width:620px;margin:auto;padding:13px 16px;border:1px solid #824a4a;background:#251719;color:#fff;font:14px/1.5 system-ui,sans-serif}
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <main class="queue-boot-screen" role="status">
+        <section class="queue-boot-card">
+          <p class="queue-boot-brand">QUEUE</p>
+          <h1 id="queue-boot-title">Rakendus käivitub…</h1>
+          <p id="queue-boot-message">Kui sisu ei ilmu, näitab Queue käivitustõrget siin.</p>
+        </section>
+      </main>
+    </div>
+    <script>
+      (() => {
+        const root = document.getElementById('root')
+        let mounted = false
+        const message = 'Queue käivitamisel tekkis viga. Laadi leht uuesti. Kui viga kordub, jaga arendajaga Console’is nähtavat esimest veateadet.'
+        const showError = () => {
+          if (!mounted) {
+            const title = document.getElementById('queue-boot-title')
+            const copy = document.getElementById('queue-boot-message')
+            if (title) title.textContent = 'Queue ei saanud käivituda'
+            if (copy) copy.textContent = message
+            return
+          }
+          if (document.getElementById('queue-runtime-error')) return
+          const notice = document.createElement('div')
+          notice.id = 'queue-runtime-error'
+          notice.className = 'queue-runtime-error'
+          notice.setAttribute('role', 'alert')
+          notice.textContent = message
+          document.body.prepend(notice)
+        }
+        window.__QUEUE_MARK_READY__ = () => { mounted = true }
+        window.addEventListener('error', event => {
+          if (event.error || event.target instanceof HTMLScriptElement) showError()
+        }, true)
+        window.addEventListener('unhandledrejection', showError)
+        window.setTimeout(() => { if (!mounted) showError() }, 12000)
+      })()
+    </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

@@ -100,6 +100,7 @@ firebase.cmd emulators:exec --project demo-queue-rules --only firestore,auth "np
 
 Enne GitHub Pages'is avaldamist:
 
+- Ava GitHubis Settings → Pages ja vali Build and deployment → Source → GitHub Actions. Vite'i lähtefailide otse Pagesi harust avaldamine jätab rakenduse tühjaks; avaldada tuleb Actionsi loodud `dist`.
 - Ava Firebase Console'is App Check ja lülita Firestore'i ning Realtime Database'i enforcement sisse pärast seda, kui production-domeen töötab.
 - Lisa production reCAPTCHA Enterprise site key GitHub Actions secrets'i nimega `VITE_FIREBASE_APP_CHECK_SITE_KEY`. Debug token jääb ainult lokaalsesse `.env.local` faili.
 - Kontrolli, et `members/{UID}` dokumentides oleks ainult lubatud inimesed ja nende nimi oleks kujul `Eesnimi Perekonnanimi`.
