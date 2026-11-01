@@ -47,8 +47,9 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Ensure privacy notice is ready
         run: |
-          if grep -Eq '\[[A-Z_]+\]' public/privacy.html; then
-            echo "Fill all privacy notice placeholders before publishing."
+          missing=$(grep -oE '\[[A-Z_]+\]' public/privacy.html | sort -u | paste -sd ', ' -)
+          if [ -n "$missing" ]; then
+            echo "::error title=Privacy notice incomplete::Fill these fields before publishing: $missing"
             exit 1
           fi
       - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5.0.0
