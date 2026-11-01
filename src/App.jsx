@@ -256,6 +256,8 @@ function App() {
     return () => { window.removeEventListener('online', updateNetwork); window.removeEventListener('offline', updateNetwork) }
   }, [])
 
+  const event = events.find(item => item.id === eventId) || null
+
   useEffect(() => {
     const activeView = mode === 'production' || mode === 'host'
     if (!activeView || membership !== 'allowed' || !user) return undefined
@@ -301,8 +303,6 @@ function App() {
     if (!events.length) { if (eventId) setEventId(''); return }
     if (!eventId || !events.some(item => item.id === eventId)) setEventId(events[0].id)
   }, [events, eventId, eventsReady])
-
-  const event = events.find(item => item.id === eventId) || null
 
   useEffect(() => {
     if (!db || membership !== 'allowed' || !eventId) {
