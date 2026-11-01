@@ -16,8 +16,13 @@ const databaseURL = import.meta.env.VITE_FIREBASE_DATABASE_URL
 
 export const isFirebaseConfigured = Object.values(config).every(Boolean)
 export const app = isFirebaseConfigured ? initializeApp(config) : null
-const appCheckSiteKey = import.meta.env.VITE_FIREBASE_APP_CHECK_SITE_KEY
-export let appCheckError = import.meta.env.PROD && !appCheckSiteKey ? 'App Check site key puudub. Lisa VITE_FIREBASE_APP_CHECK_SITE_KEY enne avaldamist.' : ''
+// Public reCAPTCHA Enterprise site key for the production GitHub Pages origin.
+// Firebase App Check loads the Enterprise API and requests its own attestation token.
+const productionAppCheckSiteKey = '6LdjyAsuAAAAAOe9pQfL5evHHHesLUl4AMhj68Ud'
+const appCheckSiteKey = import.meta.env.PROD
+  ? productionAppCheckSiteKey
+  : import.meta.env.VITE_FIREBASE_APP_CHECK_SITE_KEY
+export let appCheckError = ''
 if (app && appCheckSiteKey) {
   if (import.meta.env.DEV && import.meta.env.VITE_FIREBASE_APPCHECK_DEBUG_TOKEN) {
     globalThis.FIREBASE_APPCHECK_DEBUG_TOKEN = import.meta.env.VITE_FIREBASE_APPCHECK_DEBUG_TOKEN === 'true'
