@@ -705,7 +705,7 @@ function App() {
           const nextOrder = index < insertAt ? index : index + createdRows.length
           if (row.order !== nextOrder) transaction.update(references.find(refDoc => refDoc.id === row.id), { order: nextOrder })
         })
-        createdRows.forEach((row, index) => transaction.set(newReferences[index], { ...row, order: insertAt + index }))
+        entries.forEach((entry, index) => transaction.set(newReferences[index], { ...entry, order: insertAt + index }))
         const nextTimeline = rebaseTimelineAfterQueueEdit(remote, rows, nextRows, Date.now() + (clockOffset ?? 0), user.uid)
         transaction.update(eventRef, {
           queueRevision: revision + 1,
