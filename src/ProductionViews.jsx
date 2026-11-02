@@ -6,7 +6,7 @@ import {
 } from 'lucide-react'
 import {
   EVENT_TIME_ZONE, NOTE_DEPARTMENTS, calculateDrift, currentDateInZone, dateTimeInZone, formatClock, formatSignedOffset, getCueWidths, getPerformanceNumbers, isSceneChangeItem,
-  isValidColor, isValidQueueDuration, parseDuration, timestampToMillis,
+  isValidColor, isValidFullName, isValidQueueDuration, parseDuration, timestampToMillis,
 } from './timeline'
 
 const DEPARTMENT_LABELS = { ALL: 'KÕIK', HELI: 'HELI', VALGUS: 'VALGUS', VIDEO: 'VIDEO' }
@@ -48,6 +48,19 @@ export function AccessScreen({ status, error, onRetry, onSignOut }) {
     ? ['Profiili nimi vajab parandamist', 'Firebase’is olev nimi peab olema täpselt kujul „Eesnimi Perekonnanimi“.']
     : ['Queue ligipääs puudub', 'See e-posti aadress pole Queue liikmete nimekirjas. Ligipääsu haldab projekti omanik Firebase’is.']
   return <main className="q-auth-screen"><section className="q-auth-card"><QueueMark/><p className="q-eyebrow">QUEUE ACCESS</p><h1>{copy[0]}</h1><p>{error || copy[1]}</p><div className="q-auth-actions"><button className="q-button" onClick={onRetry}>Proovi uuesti</button><button className="q-button q-button--quiet" onClick={onSignOut}><LogOut size={15}/>Logi välja</button></div></section></main>
+}
+
+export function MemberSetupScreen({ email, busy, error, onCreate, onSignOut }) {
+  const [fullName, setFullName] = useState('')
+  const validName = isValidFullName(fullName)
+  return <main className="q-auth-screen"><section className="q-auth-card"><QueueMark/><p className="q-eyebrow">QUEUE PROFILE</p><h1>Lisa oma nimi</h1><p>{email ? `${email} konto on lubatud. ` : ''}Sisesta nimi kujul eesnimi ja perekonnanimi. Queue loob profiili automaatselt.</p>
+    <form className="q-form" onSubmit={event => { event.preventDefault(); if (validName) onCreate(fullName.trim()) }}>
+      <label>Ees- ja perekonnanimi<input autoComplete="name" maxLength={120} value={fullName} onChange={event => setFullName(event.target.value)} placeholder="Sergei Žuravljov" required/></label>
+      {error && <p className="q-alert" role="alert">{error}</p>}
+      <button className="q-button q-button--primary" disabled={busy || !validName}>{busy ? 'Loon profiili…' : 'Jätka'}</button>
+    </form>
+    <button type="button" className="q-text-button q-reset" onClick={onSignOut}><LogOut size={15}/>Logi välja</button>
+  </section></main>
 }
 
 export function AppShell({ mode, setMode, member, onOpenSettings, children }) {

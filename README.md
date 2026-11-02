@@ -5,8 +5,9 @@ Queue on kooliürituste tehnilise tiimi ühine tööruum. Kasutajaliides on eest
 ## Ligipääsu mudel
 
 - Sisselogimine toimub e-posti ja parooliga. Google’i, Microsofti ja avaliku registreerimise nuppe pole.
-- Projekti omanik lisab iga kasutaja Firebase Authenticationisse ning loob Firestore’is käsitsi liikme dokumendi `members/{UID}`.
+- Projekti omanik lisab kasutajad Firebase Authenticationisse. Esimesel sisselogimisel küsib Queue nime ning loob kasutaja enda `members/{UID}` dokumendi automaatselt.
 - Queue avab Firestore’i andmed ainult siis, kui kasutajal on aktiivne `members/{UID}` kirje.
+- Avalik registreerimine peab Firebase Authenticationis olema välja lülitatud. Kui see on sisse lülitatud, saab igaüks konto luua ja Queue liikmeks registreeruda.
 - Kõigil lubatud liikmetel on samad Queue õigused. Rakenduses pole administraatori rolli ega sündmuse kustutamise nuppu.
 - Kasutaja nimi peab koosnema täpselt kahest sõnast: eesnimi ja perekonnanimi.
 - Märkmete osakonnad kuvatakse `KÕIK`, `HELI`, `VALGUS`, `VIDEO` (andmebaasis salvestatakse `KÕIK` tehnilise väärtusena `ALL`). Kõik liikmed näevad kõiki märkmeid ja võivad neid filtriga sortida.
@@ -15,7 +16,7 @@ Queue on kooliürituste tehnilise tiimi ühine tööruum. Kasutajaliides on eest
 
 Queue ei kasuta Cloud Functionse ega serveri saladusi. Firestore’i turvareeglid on andmetele ligipääsu peamine kontroll.
 
-1. **Authentication:** Firebase Console → Authentication → Sign-in method → luba **Email/Password**. Lisa Authorized domains loendisse `localhost`, `127.0.0.1` ja GitHub Pagesi domeen, näiteks `my-school.github.io`.
+1. **Authentication:** Firebase Console → Authentication → Sign-in method → jäta aktiivseks ainult **Email/Password**. Firebase Authenticationi seadetest lülita **Enable create (sign-up)** välja enne Firestore Rules’i kasutamist; keela ka anonüümne ja muud sisselogimise pakkujad, kui need on aktiveeritud. Hoia **Email enumeration protection** sees. Lisa Authorized domains loendisse `localhost`, `127.0.0.1` ja GitHub Pagesi domeen, näiteks `my-school.github.io`.
 
 2. **Firestorе:** olemasolev Euroopa Firestore’i andmebaas sobib. Queue kasutab sündmuste, esinemiste, märkmete ja vestluse jaoks Firestore’i.
 
@@ -39,19 +40,10 @@ Firebase API key on avalik projektiseade koodis. Lisa .env.local faili Firebase 
 
 6. **Lisa kasutaja:**
    - Firebase Console → Authentication → Users → Add user. Kasuta kasutaja e-posti ja ajutist juhuslikku parooli; ära jaga seda parooli.
-   - Kopeeri kasutaja UID.
-   - Firestore → `members` collection → loo dokumendi ID-ks UID.
-   - Lisa väljad:
+   - Palu kasutajal Queue sisselogimislehel valida **Esimene kord või unustasid parooli?**. Firebase saadab lingi parooli seadistamiseks. Sama toiming sobib hiljem parooli taastamiseks.
+   - Esimesel sisselogimisel sisestab kasutaja nime kujul `Eesnimi Perekonnanimi`. Queue loob tema UID alla Firestore’i `members/{UID}` dokumendi väljadega `email`, `fullName` ja `enabled: true`. Firestore’i dokumenti pole vaja käsitsi luua.
 
-     ```text
-     email      string   kasutaja e-posti aadress väiketähtedega
-     fullName   string   Eesnimi Perekonnanimi
-     enabled    boolean  true
-     ```
-
-   - Kasutaja avab Queue sisselogimise ja valib **Esimene kord või unustasid parooli?**. Firebase saadab e-posti kaudu lingi parooli seadistamiseks. Sama toiming sobib hiljem parooli taastamiseks.
-
-   Ligipääsu sulgemiseks määra `members/{UID}.enabled` väärtuseks `false` või eemalda liikme dokument. Kasutaja saab Auth-konto eemaldada Firebase Authenticationi kaudu.
+   Ligipääsu sulgemiseks määra olemasolevas `members/{UID}` dokumendis `enabled` väärtuseks `false` ja peata konto Firebase Authenticationis. Kui eemaldad liikme dokumendi, loo enne seda Firebase Console’is `memberRevocations/{UID}` dokument, näiteks väljaga `revokedAt` (timestamp). Selle UID-ga kasutaja ei saa enam profiili ise uuesti luua. Rakendus ei luba klientidel seda loendit lugeda ega muuta.
 
 7. **GitHub Pages:** loo Actions secrets väärtustele VITE_FIREBASE_AUTH_DOMAIN, VITE_FIREBASE_PROJECT_ID, VITE_FIREBASE_STORAGE_BUCKET, VITE_FIREBASE_MESSAGING_SENDER_ID, VITE_FIREBASE_APP_ID ja VITE_FIREBASE_DATABASE_URL. API key on koodis. GitHub Settings → Pages peab kasutama GitHub Actionsit.
 
@@ -98,7 +90,7 @@ Enne GitHub Pages'is avaldamist:
 
 - Ava GitHubis Settings → Pages ja vali Build and deployment → Source → GitHub Actions. Vite'i lähtefailide otse Pagesi harust avaldamine jätab rakenduse tühjaks; avaldada tuleb Actionsi loodud `dist`.
 - Firebase Console -> Security -> App Check -> APIs: vali Cloud Firestore ja Realtime Database ning lülita enforcement välja. Hoia Firestore Rules ja Realtime Database Rules aktiivsena.
-- Kontrolli, et `members/{UID}` dokumentides oleks ainult lubatud inimesed ja nende nimi oleks kujul `Eesnimi Perekonnanimi`.
+- Veendu, et avalik Firebase Authenticationi registreerimine oleks välja lülitatud. Kontrolli, et Authenticationisse lisataks ainult kutsutud inimesed. Kui liikmeprofiil eemaldatakse ligipääsu lõpetamiseks, lisa ka `memberRevocations/{UID}` dokument.
 - Asenda `public/privacy.html` kõik nurksulgudes väljad (vastutav töötleja, kontakt, õiguslik alus, säilitustähtaeg ja võimalikud rahvusvahelised edastused); kinnita tekst kooli andmekaitse eest vastutava inimesega. GitHub Actions blokeerib avaldamise, kuni väljad on täidetud.
 - Kontrolli GitHub Pages'i Actions deploy'i ja Firebase Rules'i pärast muudatusi. Queue kasutab `npm run deploy` asemel GitHub Actions workflow'd.
 

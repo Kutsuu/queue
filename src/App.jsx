@@ -13,7 +13,7 @@ import {
   readTimelineState, timestampToMillis,
 } from './timeline'
 import {
-  AccessScreen, AppShell, AuthScreen, CreateEventDialog, NoteDialog,
+  AccessScreen, AppShell, AuthScreen, CreateEventDialog, MemberSetupScreen, NoteDialog,
   ProductionView, QueueEditor, SettingsPage,
 } from './ProductionViews'
 
@@ -43,9 +43,26 @@ function getEventStartMs(event) {
 }
 
 function getMemberError(error) {
-  if (error?.code === 'permission-denied') return 'Firebase Rules keelas liikmeinfo laadimise. Kontrolli members/{UID} dokumenti ja reegleid.'
+  if (error?.code === 'permission-denied') return 'Firebase Rules keelas liikmeinfo laadimise. Kontrolli Firestore Rules reegleid ja seda, kas UID on kirjas memberRevocations/{UID} loendis.'
   if (error?.code === 'unavailable') return 'Firebase pole hetkel kättesaadav. Kontrolli internetiühendust ja proovi uuesti.'
   return 'Liikmeinfo laadimine ebaõnnestus.'
+}
+
+function memberProvisionError(error) {
+  if (error?.code === 'permission-denied') return 'Profiili ei saanud luua. Kontrolli Firestore Rules reegleid ja seda, et selle UID jaoks poleks Firebase’is ligipääsu peatamise kirjet.'
+  if (error?.code === 'unavailable') return 'Firebase pole hetkel kättesaadav. Kontrolli internetiühendust ja proovi uuesti.'
+  return 'Profiili loomine ebaõnnestus. Proovi uuesti.'
+}
+
+async function createOwnMemberProfile(database, account, fullName) {
+  const memberRef = doc(database, 'members', account.uid)
+  const email = String(account.email || '').trim().toLowerCase()
+  return runTransaction(database, async transaction => {
+    const current = await transaction.get(memberRef)
+    if (current.exists()) return false
+    transaction.set(memberRef, { email, fullName: fullName.trim(), enabled: true })
+    return true
+  })
 }
 
 function authErrorMessage(error) {
@@ -128,6 +145,7 @@ function App() {
   const [membership, setMembership] = useState('loading')
   const [membershipRetry, setMembershipRetry] = useState(0)
   const [memberError, setMemberError] = useState('')
+  const [profileError, setProfileError] = useState('')
   const [events, setEvents] = useState([])
   const [eventsReady, setEventsReady] = useState(false)
   const [eventsError, setEventsError] = useState('')
@@ -205,10 +223,24 @@ function App() {
   useEffect(() => {
     if (!db || !user) { setMember(null); setMembership('signed-out'); return undefined }
     setMembership('loading')
+    let profileCreationStarted = false
     const stop = onSnapshot(doc(db, 'members', user.uid), snapshot => {
       if (!snapshot.exists()) {
         setMember(null)
-        setMembership('not-allowed')
+        if (isValidFullName(user.displayName)) {
+          setMembership('provisioning')
+          if (!profileCreationStarted && user.email) {
+            profileCreationStarted = true
+            createOwnMemberProfile(db, user, user.displayName.trim()).then(created => {
+              if (!created) setMembershipRetry(value => value + 1)
+            }).catch(error => {
+              setMemberError(memberProvisionError(error))
+              setMembership('error')
+            })
+          }
+        } else {
+          setMembership('profile-setup')
+        }
         return
       }
       const data = snapshot.data()
@@ -231,6 +263,31 @@ function App() {
     })
     return stop
   }, [user?.uid, user?.email, membershipRetry])
+
+  async function handleCreateMemberProfile(fullName) {
+    const cleanName = String(fullName || '').trim()
+    if (!db || !user?.email || !isValidFullName(cleanName)) {
+      setProfileError('Sisesta ees- ja perekonnanimi kahe sõnana.')
+      return false
+    }
+    setProfileError('')
+    setMembership('provisioning')
+    try {
+      const created = await createOwnMemberProfile(db, user, cleanName)
+      if (created) {
+        const nextMember = { email: user.email.trim().toLowerCase(), fullName: cleanName, enabled: true, uid: user.uid }
+        setMember(nextMember)
+        setMembership('allowed')
+      } else {
+        setMembershipRetry(value => value + 1)
+      }
+      return true
+    } catch (error) {
+      setProfileError(memberProvisionError(error))
+      setMembership('profile-setup')
+      return false
+    }
+  }
 
   useEffect(() => {
     if (!realtimeDb) { setClockOffset(null); return undefined }
@@ -832,8 +889,9 @@ function App() {
 
   if (!authReady) return <main className="q-auth-screen"><section className="q-auth-card"><QueueMarkPlaceholder/>Queue laadib…</section></main>
   if (!user) return <AuthScreen configured={isFirebaseConfigured} busy={authBusy} error={authError} notice={authNotice} onLogin={handleLogin} onReset={handlePasswordReset}/>
-  if (membership === 'loading') return <main className="q-auth-screen"><section className="q-auth-card"><QueueMarkPlaceholder/>Kontrollin ligipääsu…</section></main>
+  if (membership === 'loading' || membership === 'provisioning') return <main className="q-auth-screen"><section className="q-auth-card"><QueueMarkPlaceholder/>{membership === 'provisioning' ? 'Loon kasutajaprofiili…' : 'Kontrollin ligipääsu…'}</section></main>
   if (membership === 'error') return <AccessScreen status="error" error={memberError} onRetry={() => { setMemberError(''); setMembershipRetry(value => value + 1) }} onSignOut={logout}/>
+  if (membership === 'profile-setup') return <MemberSetupScreen email={user.email} busy={false} error={profileError} onCreate={handleCreateMemberProfile} onSignOut={logout}/>
   if (membership !== 'allowed') return <AccessScreen status={membership} onRetry={() => { setMemberError(''); setMembershipRetry(value => value + 1) }} onSignOut={logout}/>
 
   return <AppShell mode={mode} setMode={setMode} member={member} onOpenSettings={() => setMode('settings')}>
