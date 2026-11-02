@@ -4,7 +4,7 @@ import { getFirestore } from 'firebase/firestore'
 import { getDatabase } from 'firebase/database'
 
 const config = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  apiKey: 'AIzaSyA64q8nc7ezSo5dVJ7XUsTc3cKPhVM5DhU',
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
   projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
   storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,

@@ -27,7 +27,7 @@ Queue ei kasuta Cloud Functionse ega serveri saladusi. Firestore’i turvareegli
    Copy-Item .env.example .env.local
    ```
 
-Lisa .env.local faili Firebase Web Appi seaded: VITE_FIREBASE_API_KEY, VITE_FIREBASE_AUTH_DOMAIN, VITE_FIREBASE_PROJECT_ID, VITE_FIREBASE_STORAGE_BUCKET, VITE_FIREBASE_MESSAGING_SENDER_ID, VITE_FIREBASE_APP_ID ja VITE_FIREBASE_DATABASE_URL.
+Firebase API key on avalik projektiseade koodis. Lisa .env.local faili Firebase Web Appi seaded: VITE_FIREBASE_AUTH_DOMAIN, VITE_FIREBASE_PROJECT_ID, VITE_FIREBASE_STORAGE_BUCKET, VITE_FIREBASE_MESSAGING_SENDER_ID, VITE_FIREBASE_APP_ID ja VITE_FIREBASE_DATABASE_URL.
 
 5. **CLI ja reeglid:** projekti juurkaustas käivita PowerShellis:
 
@@ -53,7 +53,7 @@ Lisa .env.local faili Firebase Web Appi seaded: VITE_FIREBASE_API_KEY, VITE_FIRE
 
    Ligipääsu sulgemiseks määra `members/{UID}.enabled` väärtuseks `false` või eemalda liikme dokument. Kasutaja saab Auth-konto eemaldada Firebase Authenticationi kaudu.
 
-7. **GitHub Pages:** loo repository Actions secrets, mille nimed algavad `VITE_FIREBASE_` ja mille väärtused vastavad `.env.local` muutujatele. Lisa ka `VITE_FIREBASE_DATABASE_URL`, et Host saaks seadmete kellad Firebase’i serveri järgi korrigeerida. Ilma selle väärtuseta töötab rakendus kohaliku süsteemikellaga ja Host näitab sünkroonimise hoiatust. GitHub Settings → Pages peab kasutama GitHub Actionsit.
+7. **GitHub Pages:** loo Actions secrets väärtustele VITE_FIREBASE_AUTH_DOMAIN, VITE_FIREBASE_PROJECT_ID, VITE_FIREBASE_STORAGE_BUCKET, VITE_FIREBASE_MESSAGING_SENDER_ID, VITE_FIREBASE_APP_ID ja VITE_FIREBASE_DATABASE_URL. API key on koodis. GitHub Settings → Pages peab kasutama GitHub Actionsit.
 
 8. **Sündmuse kustutamine:** omanik kustutab sündmusi Firebase Console'is. Queue ei paku sündmuse eemaldamist.
 
