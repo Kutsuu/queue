@@ -6,7 +6,7 @@ import {
   orderBy, query, runTransaction, serverTimestamp, updateDoc, where, writeBatch,
 } from 'firebase/firestore'
 import { onValue, ref } from 'firebase/database'
-import { appCheckError, auth, db, isFirebaseConfigured, isServerClockConfigured, realtimeDb } from './firebase'
+import { auth, db, isFirebaseConfigured, isServerClockConfigured, realtimeDb } from './firebase'
 import {
   NOTE_DEPARTMENTS, deriveTimeline, getSegmentStarts,
   dateTimeInZone, isSceneChangeItem, isValidColor, isValidFullName, isValidQueueDuration, normalizeLegacyDepartment,
@@ -831,13 +831,12 @@ function App() {
   const hostClockReady = isServerClockConfigured && clockOffset !== null && !clockError
 
   if (!authReady) return <main className="q-auth-screen"><section className="q-auth-card"><QueueMarkPlaceholder/>Queue laadib…</section></main>
-  if (!user) return <AuthScreen configured={isFirebaseConfigured} busy={authBusy} error={authError} notice={authNotice} appCheckError={appCheckError} onLogin={handleLogin} onReset={handlePasswordReset}/>
+  if (!user) return <AuthScreen configured={isFirebaseConfigured} busy={authBusy} error={authError} notice={authNotice} onLogin={handleLogin} onReset={handlePasswordReset}/>
   if (membership === 'loading') return <main className="q-auth-screen"><section className="q-auth-card"><QueueMarkPlaceholder/>Kontrollin ligipääsu…</section></main>
   if (membership === 'error') return <AccessScreen status="error" error={memberError} onRetry={() => { setMemberError(''); setMembershipRetry(value => value + 1) }} onSignOut={logout}/>
   if (membership !== 'allowed') return <AccessScreen status={membership} onRetry={() => { setMemberError(''); setMembershipRetry(value => value + 1) }} onSignOut={logout}/>
 
   return <AppShell mode={mode} setMode={setMode} member={member} onOpenSettings={() => setMode('settings')}>
-    {appCheckError && <div className="q-banner" role="alert">{appCheckError}</div>}
     {!online && <div className="q-banner" role="alert">Internetiühendus katkes. Muudatused jõustuvad pärast ühenduse taastumist; Host käsud on peatatud.</div>}
     {eventsError && <div className="q-banner" role="alert">{eventsError}</div>}
     {itemsError && <div className="q-banner" role="alert">{itemsError}</div>}

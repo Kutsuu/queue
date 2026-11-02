@@ -2,7 +2,6 @@ import { initializeApp } from 'firebase/app'
 import { getAuth } from 'firebase/auth'
 import { getFirestore } from 'firebase/firestore'
 import { getDatabase } from 'firebase/database'
-import { initializeAppCheck, ReCaptchaEnterpriseProvider } from 'firebase/app-check'
 
 const config = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -16,28 +15,6 @@ const databaseURL = import.meta.env.VITE_FIREBASE_DATABASE_URL
 
 export const isFirebaseConfigured = Object.values(config).every(Boolean)
 export const app = isFirebaseConfigured ? initializeApp(config) : null
-// Public reCAPTCHA Enterprise site key for the production GitHub Pages origin.
-// Firebase App Check loads the Enterprise API and requests its own attestation token.
-const productionAppCheckSiteKey = '6LdjyAsuAAAAAOe9pQfL5evHHHesLUl4AMhj68Ud'
-const appCheckSiteKey = import.meta.env.PROD
-  ? productionAppCheckSiteKey
-  : import.meta.env.VITE_FIREBASE_APP_CHECK_SITE_KEY
-export let appCheckError = ''
-if (app && appCheckSiteKey) {
-  if (import.meta.env.DEV && import.meta.env.VITE_FIREBASE_APPCHECK_DEBUG_TOKEN) {
-    globalThis.FIREBASE_APPCHECK_DEBUG_TOKEN = import.meta.env.VITE_FIREBASE_APPCHECK_DEBUG_TOKEN === 'true'
-      ? true
-      : import.meta.env.VITE_FIREBASE_APPCHECK_DEBUG_TOKEN
-  }
-  try {
-    initializeAppCheck(app, {
-      provider: new ReCaptchaEnterpriseProvider(appCheckSiteKey),
-      isTokenAutoRefreshEnabled: true,
-    })
-  } catch (error) {
-    appCheckError = error?.message || 'App Checki käivitamine ebaõnnestus.'
-  }
-}
 export const auth = app ? getAuth(app) : null
 export const db = app ? getFirestore(app) : null
 export const realtimeDb = app && databaseURL ? getDatabase(app, databaseURL) : null

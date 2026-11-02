@@ -26,7 +26,6 @@ Võimalik mõju on piiratud, sest sisu ei ole avalik, ligipääs on autentitud l
 
 - Firebase Authentication nõuab sisselogimist; Firestore Rules kontrollivad aktiivset liikmestaatust ja konto e-posti.
 - Firestore Rules piiravad ligipääsu tööruumidele ja valideerivad salvestatavate andmete struktuuri.
-- Rakendus kasutab Firebase App Checki päringute väärkasutuse vähendamiseks.
 - Kasutajaid teavitatakse töötlemisest selles andmekaitseteates; andmetega seotud taotlused saab esitada kontaktile `sergeizuravl@gmail.com`.
 - Tööruumi sisu säilitatakse seni, kuni seda on vaja sündmuste ettevalmistamiseks ja tehnilise töö korraldamiseks; kui seda enam vaja ei ole, kustutab vastutav töötleja selle Firebase'ist.
 - Vestlusse ja märkmetesse ei tohi lisada tundlikke ega eesmärgi jaoks mittevajalikke isikuandmeid.

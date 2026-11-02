@@ -13,7 +13,7 @@ const DEPARTMENT_LABELS = { ALL: 'KÕIK', HELI: 'HELI', VALGUS: 'VALGUS', VIDEO:
 const DEFAULT_COLORS = ['#7645ff', '#bd5c41', '#e58f98', '#176c68', '#e000d0', '#4a8d22', '#00a8bd', '#357de0']
 const CUE_GAP_PX = 2
 
-export function AuthScreen({ configured, busy, error, notice, appCheckError, onLogin, onReset }) {
+export function AuthScreen({ configured, busy, error, notice, onLogin, onReset }) {
   const [email, setEmail] = useState('')
   const [resetBusy, setResetBusy] = useState(false)
   const [resetCooldown, setResetCooldown] = useState(0)
@@ -31,7 +31,6 @@ export function AuthScreen({ configured, busy, error, notice, appCheckError, onL
   }
   if (!configured) return <main className="q-auth-screen"><section className="q-auth-card"><QueueMark/><p className="q-eyebrow">FIREBASE</p><h1>Seadista ühendus</h1><p>Lisa Firebase Web Appi seaded faili <code>.env.local</code>, seejärel käivita Queue uuesti.</p><a className="q-link" href="https://console.firebase.google.com/" target="_blank" rel="noreferrer">Ava Firebase Console</a></section></main>
   return <main className="q-auth-screen"><section className="q-auth-card"><QueueMark/><p className="q-eyebrow">SHOW WORKSPACE</p><h1>Logi sisse</h1><p>Kasuta Queue’sse lisatud e-posti aadressi.</p>
-    {appCheckError && <p className="q-alert" role="alert">{appCheckError}</p>}
     <form className="q-form" onSubmit={onLogin}>
       <label>E-post<input type="email" name="email" autoComplete="username" value={email} onChange={e => setEmail(e.target.value)} placeholder="nimi@kool.ee" required/></label>
       <label>Parool<input type="password" name="password" autoComplete="current-password" placeholder="Parool" required/></label>

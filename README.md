@@ -21,19 +21,15 @@ Queue ei kasuta Cloud Functionse ega serveri saladusi. Firestore’i turvareegli
 
 3. **Realtime Database kella sünkroonimiseks:** loo Firebase Console’is Realtime Database Euroopa regioonis. Kopeeri andmebaasi URL kujul `https://PROJECT-default-rtdb.europe-west1.firebasedatabase.app`. Queue kasutab sealt ainult serverikella nihke väärtust; sündmuste andmed jäävad Firestore’i. Realtime Database’i turvareeglid keelavad rakendusel seal andmeid lugeda või muuta.
 
-4. **App Check:** registreeri Queue Web app reCAPTCHA Enterprise’i võtmega. Kohalikus arenduses kasuta ainult Firebase’i App Check debug token’it. Ära lisa debug token’it GitHub Pagesi seadetesse.
-
-   Kohalikuks App Checki debug'iks lisa ainult faili .env.local rida VITE_FIREBASE_APPCHECK_DEBUG_TOKEN=true, taaskäivita Queue ning lisa brauseri konsoolis väljastatud debug token Firebase Console'i Queue Web appi App Check seadetes. Ära lisa debug token'it GitHub Pagesi seadistustesse.
-
-5. **Lokaalne seadistus:** kopeeri näidisfail ja lisa Firebase Web Appi väärtused:
+4. **Lokaalne seadistus:** kopeeri näidisfail ja lisa Firebase Web Appi väärtused:
 
    ```powershell
    Copy-Item .env.example .env.local
    ```
 
-   Täida `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_AUTH_DOMAIN`, `VITE_FIREBASE_PROJECT_ID`, `VITE_FIREBASE_STORAGE_BUCKET`, `VITE_FIREBASE_MESSAGING_SENDER_ID`, `VITE_FIREBASE_APP_ID`, `VITE_FIREBASE_DATABASE_URL` ja `VITE_FIREBASE_APP_CHECK_SITE_KEY`. `VITE_FIREBASE_APPCHECK_DEBUG_TOKEN` käib ainult kohalikku `.env.local` faili.
+Lisa .env.local faili Firebase Web Appi seaded: VITE_FIREBASE_API_KEY, VITE_FIREBASE_AUTH_DOMAIN, VITE_FIREBASE_PROJECT_ID, VITE_FIREBASE_STORAGE_BUCKET, VITE_FIREBASE_MESSAGING_SENDER_ID, VITE_FIREBASE_APP_ID ja VITE_FIREBASE_DATABASE_URL.
 
-6. **CLI ja reeglid:** projekti juurkaustas käivita PowerShellis:
+5. **CLI ja reeglid:** projekti juurkaustas käivita PowerShellis:
 
    ```powershell
    firebase.cmd login
@@ -41,7 +37,7 @@ Queue ei kasuta Cloud Functionse ega serveri saladusi. Firestore’i turvareegli
    firebase.cmd deploy --only firestore:rules,firestore:indexes,database --project queue-8d556
    ```
 
-7. **Lisa kasutaja:**
+6. **Lisa kasutaja:**
    - Firebase Console → Authentication → Users → Add user. Kasuta kasutaja e-posti ja ajutist juhuslikku parooli; ära jaga seda parooli.
    - Kopeeri kasutaja UID.
    - Firestore → `members` collection → loo dokumendi ID-ks UID.
@@ -57,9 +53,9 @@ Queue ei kasuta Cloud Functionse ega serveri saladusi. Firestore’i turvareegli
 
    Ligipääsu sulgemiseks määra `members/{UID}.enabled` väärtuseks `false` või eemalda liikme dokument. Kasutaja saab Auth-konto eemaldada Firebase Authenticationi kaudu.
 
-8. **GitHub Pages:** loo repository Actions secrets, mille nimed algavad `VITE_FIREBASE_` ja mille väärtused vastavad `.env.local` muutujatele. Lisa ka `VITE_FIREBASE_DATABASE_URL`, et Host saaks seadmete kellad Firebase’i serveri järgi korrigeerida. Ilma selle väärtuseta töötab rakendus kohaliku süsteemikellaga ja Host näitab sünkroonimise hoiatust. GitHub Settings → Pages peab kasutama GitHub Actionsit.
+7. **GitHub Pages:** loo repository Actions secrets, mille nimed algavad `VITE_FIREBASE_` ja mille väärtused vastavad `.env.local` muutujatele. Lisa ka `VITE_FIREBASE_DATABASE_URL`, et Host saaks seadmete kellad Firebase’i serveri järgi korrigeerida. Ilma selle väärtuseta töötab rakendus kohaliku süsteemikellaga ja Host näitab sünkroonimise hoiatust. GitHub Settings → Pages peab kasutama GitHub Actionsit.
 
-9. **Sündmuse kustutamine:** sündmuse kustutamine toimub ainult Firebase Console’is. Queue ei paku sündmuse eemaldamist.
+8. **Sündmuse kustutamine:** omanik kustutab sündmusi Firebase Console'is. Queue ei paku sündmuse eemaldamist.
 
 ## Kohalik käivitamine
 
@@ -80,7 +76,7 @@ või käivita `python run_local.py` või Windowsis `start_queue.bat`. Ava Vite�
 
 Ajatelg algab `00:00:00` juurest. Paus peatab ajatelje, edasi- ja tagasiliikumine viib sihtcue planeeritud algusaega. Host’i kõrvalekalle võrdleb praegust serveriaega sündmuse planeeritud algusaja ja ajatelje positsiooniga; see muutub ka pausi ajal.
 
-Firebase’i veebikonfiguratsioon ja reCAPTCHA site key on brauserirakenduse avalikud väärtused. Andmetele ligipääsu kaitsevad Firestore’i Rules ja liikme UID nimekiri. Serveri saladusi ega teenusekonto JSON-faile ei lisata veebirakendusse.
+Firebase web configuration is public. Firestore Rules and the member UID list control access to data. Do not put server secrets or service account files in the web app.
 
 ## Kontrollid ja avaldamise eelsed sammud
 
@@ -101,12 +97,9 @@ firebase.cmd emulators:exec --project demo-queue-rules --only firestore,auth "np
 Enne GitHub Pages'is avaldamist:
 
 - Ava GitHubis Settings → Pages ja vali Build and deployment → Source → GitHub Actions. Vite'i lähtefailide otse Pagesi harust avaldamine jätab rakenduse tühjaks; avaldada tuleb Actionsi loodud `dist`.
-- Ava Firebase Console'is App Check ja lülita Firestore'i ning Realtime Database'i enforcement sisse pärast seda, kui production-domeen töötab.
-- Lisa production reCAPTCHA Enterprise site key GitHub Actions secrets'i nimega `VITE_FIREBASE_APP_CHECK_SITE_KEY`. Debug token jääb ainult lokaalsesse `.env.local` faili.
+- Firebase Console -> Security -> App Check -> APIs: vali Cloud Firestore ja Realtime Database ning lülita enforcement välja. Hoia Firestore Rules ja Realtime Database Rules aktiivsena.
 - Kontrolli, et `members/{UID}` dokumentides oleks ainult lubatud inimesed ja nende nimi oleks kujul `Eesnimi Perekonnanimi`.
 - Asenda `public/privacy.html` kõik nurksulgudes väljad (vastutav töötleja, kontakt, õiguslik alus, säilitustähtaeg ja võimalikud rahvusvahelised edastused); kinnita tekst kooli andmekaitse eest vastutava inimesega. GitHub Actions blokeerib avaldamise, kuni väljad on täidetud.
 - Kontrolli GitHub Pages'i Actions deploy'i ja Firebase Rules'i pärast muudatusi. Queue kasutab `npm run deploy` asemel GitHub Actions workflow'd.
 
 ## Tehnoloogiad
-
-React · Vite · Firebase Authentication · Cloud Firestore · Firebase Realtime Database (serverikella nihe) · Firebase App Check · GitHub Pages
