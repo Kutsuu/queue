@@ -21,6 +21,7 @@ const NOTE_QUERY_DEPARTMENTS = ['ALL', 'HELI', 'VALGUS', 'VIDEO', 'MUU']
 const LEGACY_NOTE_AUDIENCES = ['all', 'sound', 'lighting', 'video']
 const DEFAULT_COLORS = ['#7645ff', '#bd5c41', '#e58f98', '#176c68', '#e000d0', '#4a8d22', '#00a8bd', '#357de0']
 const MAX_QUEUE_ITEMS = 400
+const PRESENCE_HEARTBEAT_MS = 2 * 60_000
 
 function initialMode() {
   try {
@@ -181,6 +182,8 @@ function App() {
   const toastTimer = useRef(null)
   const queueRevisionRef = useRef({ eventId: '', revision: 0 })
   const operationBusyRef = useRef(false)
+  const noteSubscriptionsRef = useRef({ scope: '', listeners: new Map(), sources: new Map() })
+  const presencePublicationRef = useRef({ uid: '', at: 0 })
   const networkOnline = online && (!realtimeDb || firebaseConnected)
 
   const beginOperation = useCallback(() => {
@@ -269,7 +272,8 @@ function App() {
   }, [user?.uid, user?.email, membershipRetry])
 
   useEffect(() => {
-    if (!db || membership !== 'allowed' || !user) {
+    const directoryNeeded = mode === 'settings' || mode === 'production' || mode === 'host'
+    if (!db || membership !== 'allowed' || !user || !directoryNeeded) {
       setDirectoryMembers([])
       setDirectoryError('')
       return undefined
@@ -283,17 +287,22 @@ function App() {
         : 'Liikmete loendi laadimine ebaõnnestus.')
     })
     return stop
-  }, [membership, user?.uid])
+  }, [membership, user?.uid, mode])
 
   useEffect(() => {
     if (!db || membership !== 'allowed' || !user || !member || !networkOnline) return undefined
     const directoryRef = doc(db, 'memberDirectory', user.uid)
     let writing = false
+    if (presencePublicationRef.current.uid !== user.uid) {
+      presencePublicationRef.current = { uid: user.uid, at: 0 }
+    }
+    const publication = presencePublicationRef.current
     const publishPresence = async () => {
-      if (writing || !navigator.onLine) return
+      if (writing || !navigator.onLine || Date.now() - publication.at < PRESENCE_HEARTBEAT_MS) return
       writing = true
       try {
         await setDoc(directoryRef, { fullName: member.fullName, lastSeenAt: serverTimestamp() }, { merge: true })
+        publication.at = Date.now()
       } catch {
         // Presence is secondary to show control; do not block the production view.
       } finally {
@@ -301,7 +310,7 @@ function App() {
       }
     }
     void publishPresence()
-    const interval = window.setInterval(publishPresence, 60_000)
+    const interval = window.setInterval(publishPresence, PRESENCE_HEARTBEAT_MS)
     window.addEventListener('focus', publishPresence)
     window.addEventListener('online', publishPresence)
     return () => {
@@ -442,34 +451,67 @@ function App() {
   const itemKey = items.map(item => item.id).join('|')
   const observedNoteItems = getObservedNoteItems(items, eventDoc || event, mode)
   const observedNoteKey = observedNoteItems.map(item => item.id).join('|')
+
   useEffect(() => {
-    if (!db || membership !== 'allowed' || !eventId || !observedNoteItems.length) { setNotes([]); return undefined }
-    const stops = []
-    const sources = new Map()
-    const publish = () => {
-      const all = [...sources.values()].flat()
-      const unique = [...new Map(all.map(note => [note.id, note])).values()]
-      setNotes(unique)
+    const scope = db && membership === 'allowed' && user && eventId ? `${user.uid}:${eventId}` : ''
+    const previous = noteSubscriptionsRef.current
+    previous.listeners.forEach(stop => stop())
+    const registry = { scope, listeners: new Map(), sources: new Map() }
+    noteSubscriptionsRef.current = registry
+    if (!scope) {
+      setNotes([])
+      setNotesError('')
     }
-    observedNoteItems.forEach(item => {
+    return () => {
+      registry.listeners.forEach(stop => stop())
+      if (noteSubscriptionsRef.current === registry) {
+        noteSubscriptionsRef.current = { scope: '', listeners: new Map(), sources: new Map() }
+      }
+    }
+  }, [membership, user?.uid, eventId])
+
+  useEffect(() => {
+    const scope = db && membership === 'allowed' && user && eventId ? `${user.uid}:${eventId}` : ''
+    const registry = noteSubscriptionsRef.current
+    if (!scope || registry.scope !== scope) { setNotes([]); return }
+
+    const desired = new Map(observedNoteItems.map(item => [item.id, item]))
+    for (const [itemId, stop] of registry.listeners) {
+      if (desired.has(itemId)) continue
+      stop()
+      registry.listeners.delete(itemId)
+      registry.sources.delete(itemId)
+    }
+
+    const publish = () => {
+      if (noteSubscriptionsRef.current !== registry) return
+      const all = [...registry.sources.values()].flat()
+      setNotes([...new Map(all.map(note => [note.id, note])).values()])
+    }
+
+    for (const item of desired.values()) {
+      if (registry.listeners.has(item.id)) continue
       const base = collection(db, 'events', eventId, 'items', item.id, 'notes')
-      stops.push(onSnapshot(query(base,
+      const stop = onSnapshot(query(base,
         or(
           where('department', 'in', NOTE_QUERY_DEPARTMENTS),
           where('audience', 'in', LEGACY_NOTE_AUDIENCES),
         ),
         orderBy('updatedAt', 'desc'),
       ), snapshot => {
-        sources.set(item.id, snapshot.docs.map(note => ({ id: note.id, itemId: item.id, ...note.data() })))
+        if (noteSubscriptionsRef.current !== registry || !registry.listeners.has(item.id)) return
+        registry.sources.set(item.id, snapshot.docs.map(note => ({ id: note.id, itemId: item.id, ...note.data() })))
         publish()
         setNotesError('')
       }, error => {
+        if (noteSubscriptionsRef.current !== registry || !registry.listeners.has(item.id)) return
         if (error.code !== 'permission-denied') setNotesError('Märkmete laadimine ebaõnnestus.')
         else setNotesError('Firebase Rules ei luba märkmeid laadida.')
-      }))
-    })
-    return () => stops.forEach(stop => stop())
-  }, [membership, user?.uid, eventId, itemKey, mode, eventDoc?.timeline?.itemId, observedNoteKey])
+      })
+      registry.listeners.set(item.id, stop)
+    }
+    publish()
+  }, [membership, user?.uid, eventId, observedNoteKey])
 
   useEffect(() => {
     const current = eventId === queueRevisionRef.current.eventId ? queueRevisionRef.current.revision : null
@@ -609,18 +651,14 @@ function App() {
     if (!startDate) { showToast('Algusaeg ei sobi või seda kohalikku aega ei eksisteeri.'); return false }
     if (!beginOperation()) return false
     try {
-      await runTransaction(db, async transaction => {
-        const snapshot = await transaction.get(doc(db, 'events', eventId))
-        if (!snapshot.exists()) throw new Error('Üritust ei leitud.')
-        transaction.update(doc(db, 'events', eventId), {
-          title,
-          venue: String(values.venue || '').trim(),
-          date: values.date,
-          start: values.start,
-          startAt: Timestamp.fromDate(startDate),
-          updatedAt: serverTimestamp(),
-          updatedBy: user.uid,
-        })
+      await updateDoc(doc(db, 'events', eventId), {
+        title,
+        venue: String(values.venue || '').trim(),
+        date: values.date,
+        start: values.start,
+        startAt: Timestamp.fromDate(startDate),
+        updatedAt: serverTimestamp(),
+        updatedBy: user.uid,
       })
       showToast('Ürituse seaded salvestatud')
       return true
@@ -713,14 +751,10 @@ function App() {
     if (!db || !user || !body.trim() || !networkOnline) return false
     try {
       const messageRef = doc(collection(db, 'events', eventId, 'messages'))
-      await runTransaction(db, async transaction => {
-        const eventSnapshot = await transaction.get(doc(db, 'events', eventId))
-        if (!eventSnapshot.exists()) throw new Error('Tööruum ei ole enam saadaval.')
-        transaction.set(messageRef, {
-          body: body.trim(), audience: 'all', author: member.fullName, authorId: user.uid,
-          authorColor: isValidColor(member.color) ? member.color : DEFAULT_MEMBER_COLOR,
-          ...(important === true ? { important: true } : {}), createdAt: serverTimestamp(),
-        })
+      await setDoc(messageRef, {
+        body: body.trim(), audience: 'all', author: member.fullName, authorId: user.uid,
+        authorColor: isValidColor(member.color) ? member.color : DEFAULT_MEMBER_COLOR,
+        ...(important === true ? { important: true } : {}), createdAt: serverTimestamp(),
       })
       return true
     } catch (error) {
@@ -736,15 +770,10 @@ function App() {
     try {
       const memberRef = doc(db, 'members', user.uid)
       const directoryRef = doc(db, 'memberDirectory', user.uid)
-      await runTransaction(db, async transaction => {
-        const memberSnapshot = await transaction.get(memberRef)
-        const directorySnapshot = await transaction.get(directoryRef)
-        if (!memberSnapshot.exists()) throw new Error('Liikmeprofiili ei leitud.')
-        transaction.update(memberRef, { fullName, color })
-        const directoryData = { fullName, lastSeenAt: serverTimestamp() }
-        if (directorySnapshot.exists()) transaction.update(directoryRef, directoryData)
-        else transaction.set(directoryRef, directoryData)
-      })
+      const batch = writeBatch(db)
+      batch.update(memberRef, { fullName, color })
+      batch.set(directoryRef, { fullName, lastSeenAt: serverTimestamp() }, { merge: true })
+      await batch.commit()
       setMember(current => current ? { ...current, fullName, color } : current)
       showToast('Profiil salvestatud')
       return true

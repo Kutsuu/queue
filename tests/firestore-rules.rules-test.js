@@ -4,7 +4,7 @@ import { initializeApp, deleteApp } from 'firebase/app'
 import { connectAuthEmulator, createUserWithEmailAndPassword, getAuth, signOut } from 'firebase/auth'
 import {
   collection, connectFirestoreEmulator, deleteDoc, doc, getDoc, getDocs, getFirestore, orderBy,
-  query, runTransaction, serverTimestamp, setDoc, updateDoc,
+  query, runTransaction, serverTimestamp, setDoc, updateDoc, writeBatch,
 } from 'firebase/firestore'
 
 const projectId = 'demo-queue-rules'
@@ -82,12 +82,10 @@ test('Firestore Rules enforce member allow-list, scoped notes, queue validation,
   assert.equal((await getDoc(memberRef)).data().color, '#2a89f5', 'member should be able to set their own valid chat color')
   await assert.rejects(updateDoc(memberRef, { color: 'blue' }), error => error.code === 'permission-denied')
   await assert.rejects(updateDoc(directoryRef, { fullName: 'Impersonated Name' }), error => error.code === 'permission-denied')
-  await runTransaction(member.db, async transaction => {
-    await transaction.get(memberRef)
-    await transaction.get(directoryRef)
-    transaction.update(memberRef, { fullName: 'Renamed Member' })
-    transaction.update(directoryRef, { fullName: 'Renamed Member', lastSeenAt: serverTimestamp() })
-  })
+  const profileBatch = writeBatch(member.db)
+  profileBatch.update(memberRef, { fullName: 'Renamed Member' })
+  profileBatch.set(directoryRef, { fullName: 'Renamed Member', lastSeenAt: serverTimestamp() }, { merge: true })
+  await profileBatch.commit()
   assert.equal((await getDoc(directoryRef)).data().fullName, 'Renamed Member', 'profile rename should update the shared name by member ID')
   await assert.rejects(getDoc(doc(member.db, 'members', outsider.user.uid)), error => error.code === 'permission-denied')
   await assert.rejects(getDoc(doc(member.db, 'events', eventId, 'items', itemId, 'notes', 'private-note')), error => error.code === 'permission-denied')
