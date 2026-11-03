@@ -8,7 +8,7 @@ import {
 import { onValue, ref } from 'firebase/database'
 import { auth, db, isFirebaseConfigured, isServerClockConfigured, realtimeDb } from './firebase'
 import {
-  NOTE_DEPARTMENTS, deriveTimeline, getSegmentStarts,
+  DEFAULT_MEMBER_COLOR, NOTE_DEPARTMENTS, deriveTimeline, getSegmentStarts,
   dateTimeInZone, isSceneChangeItem, isValidColor, isValidFullName, isValidQueueDuration, normalizeLegacyDepartment,
   readTimelineState, timestampToMillis,
 } from './timeline'
@@ -673,12 +673,26 @@ function App() {
         if (!eventSnapshot.exists()) throw new Error('Tööruum ei ole enam saadaval.')
         transaction.set(messageRef, {
           body: body.trim(), audience: 'all', author: member.fullName, authorId: user.uid,
+          authorColor: isValidColor(member.color) ? member.color : DEFAULT_MEMBER_COLOR,
           ...(important === true ? { important: true } : {}), createdAt: serverTimestamp(),
         })
       })
       return true
     } catch (error) {
       showToast(error.code === 'permission-denied' ? 'Firebase Rules keelas sõnumi saatmise.' : 'Sõnumi saatmine ebaõnnestus.')
+      return false
+    }
+  }
+
+  async function saveMemberColor(color) {
+    if (!db || !user || !isValidColor(color)) return false
+    try {
+      await updateDoc(doc(db, 'members', user.uid), { color })
+      setMember(current => current ? { ...current, color } : current)
+      showToast('Vestluse värv salvestatud')
+      return true
+    } catch (error) {
+      showToast(error.code === 'permission-denied' ? 'Firebase Rules ei luba profiili värvi muuta. Uuenda Firestore Rules.' : 'Värvi salvestamine ebaõnnestus.')
       return false
     }
   }
@@ -908,12 +922,12 @@ function App() {
 
   if (mode === 'timer') return <CountdownView items={items} timeline={timeline} offline={!networkOnline} onExit={() => setMode('production')}/>
 
-  return <AppShell mode={mode} setMode={setMode} member={member} onOpenSettings={() => setMode('settings')}>
+  return <AppShell mode={mode} setMode={setMode} onOpenSettings={() => setMode('settings')}>
     {!networkOnline && <div className="q-offline-alert" role="alert">Internetiühendus katkes. Sõnumite saatmine ja Host’i juhtimine on peatatud.</div>}
     {eventsError && <div className="q-banner" role="alert">{eventsError}</div>}
     {itemsError && <div className="q-banner" role="alert">{itemsError}</div>}
     {notesError && <div className="q-banner" role="alert">{notesError}</div>}
-    {mode === 'settings' ? <SettingsPage events={events} selectedEventId={eventId} member={member} onSelectEvent={id => { setEventId(id); setMode('production') }} onCreateEvent={() => { setEventDialogError(''); setShowCreateEvent(true) }} onSignOut={logout}/> : !event ? <section className="q-empty-workspace"><h1>{eventsReady ? 'Tööruumi pole valitud' : 'Laen tööruume…'}</h1>{eventsReady && <button className="q-button q-button--primary" onClick={() => setMode('settings')}><Settings2 size={15}/>Ava tööruumid</button>}</section> : mode === 'edit' ? <QueueEditor event={eventDoc || event} items={items} notesByItem={allNotesByItem} noteBusy={noteBusy} onAddNote={item => setNoteItem({ item, note: null })} onEditNote={(item, note) => setNoteItem({ item, note })} onDeleteNote={deleteNote} queueRevision={event.queueRevision} onSaveItem={saveItem} onDeleteItem={deleteItem} onMoveItem={moveItem} onAddItem={addQueueItem} onSaveEvent={saveEvent}/> : (mode === 'production' || mode === 'host') ? (
+    {mode === 'settings' ? <SettingsPage events={events} selectedEventId={eventId} member={member} onSelectEvent={id => { setEventId(id); setMode('production') }} onCreateEvent={() => { setEventDialogError(''); setShowCreateEvent(true) }} onSignOut={logout} onSaveColor={saveMemberColor}/> : !event ? <section className="q-empty-workspace"><h1>{eventsReady ? 'Tööruumi pole valitud' : 'Laen tööruume…'}</h1>{eventsReady && <button className="q-button q-button--primary" onClick={() => setMode('settings')}><Settings2 size={15}/>Ava tööruumid</button>}</section> : mode === 'edit' ? <QueueEditor event={eventDoc || event} items={items} notesByItem={allNotesByItem} noteBusy={noteBusy} onAddNote={item => setNoteItem({ item, note: null })} onEditNote={(item, note) => setNoteItem({ item, note })} onDeleteNote={deleteNote} queueRevision={event.queueRevision} onSaveItem={saveItem} onDeleteItem={deleteItem} onMoveItem={moveItem} onAddItem={addQueueItem} onSaveEvent={saveEvent}/> : (mode === 'production' || mode === 'host') ? (
       !itemsReady ? <div className="q-empty-workspace">Laen järjekorda…</div> : <>
         <ProductionView
           mode={mode}

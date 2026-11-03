@@ -5,7 +5,7 @@ import {
   Flag, Pencil, Settings2, SkipBack, SkipForward, Trash2, X, ZoomIn, ZoomOut,
 } from 'lucide-react'
 import {
-  EVENT_TIME_ZONE, NOTE_DEPARTMENTS, calculateDrift, currentDateInZone, dateTimeInZone, formatClock, formatSignedOffset, getCueWidths, getPerformanceNumbers, isSceneChangeItem,
+  DEFAULT_MEMBER_COLOR, EVENT_TIME_ZONE, NOTE_DEPARTMENTS, calculateDrift, currentDateInZone, dateTimeInZone, formatClock, formatSignedOffset, getCueWidths, getPerformanceNumbers, isSceneChangeItem,
   isValidColor, isValidFullName, isValidQueueDuration, parseDuration, timestampToMillis,
 } from './timeline'
 
@@ -30,7 +30,7 @@ export function AuthScreen({ configured, busy, error, notice, onLogin, onReset }
     } finally { setResetBusy(false) }
   }
   if (!configured) return <main className="q-auth-screen"><section className="q-auth-card"><QueueMark/><p className="q-eyebrow">FIREBASE</p><h1>Seadista ühendus</h1><p>Lisa Firebase Web Appi seaded faili <code>.env.local</code>, seejärel käivita Queue uuesti.</p><a className="q-link" href="https://console.firebase.google.com/" target="_blank" rel="noreferrer">Ava Firebase Console</a></section></main>
-  return <main className="q-auth-screen"><section className="q-auth-card"><QueueMark/><p className="q-eyebrow">SHOW WORKSPACE</p><h1>Logi sisse</h1><p>Kasuta Queue’sse lisatud e-posti aadressi.</p>
+  return <main className="q-auth-screen"><section className="q-auth-card"><h1>Logi sisse</h1>
     <form className="q-form" onSubmit={onLogin}>
       <label>E-post<input type="email" name="email" autoComplete="username" value={email} onChange={e => setEmail(e.target.value)} placeholder="nimi@kool.ee" required/></label>
       <label>Parool<input type="password" name="password" autoComplete="current-password" placeholder="Parool" required/></label>
@@ -39,7 +39,7 @@ export function AuthScreen({ configured, busy, error, notice, onLogin, onReset }
       <button className="q-button q-button--primary" disabled={busy}>{busy ? 'Kontrollin…' : 'Logi sisse'}</button>
     </form>
     <button type="button" className="q-text-button q-reset" disabled={busy || resetBusy || resetCooldown > 0 || !email.trim()} onClick={requestReset}><Mail size={15}/>{resetBusy ? 'Saadan e-kirja…' : resetCooldown ? `Proovi uuesti ${resetCooldown} s pärast` : 'Esimene kord või unustasid parooli?'}</button>
-    <p className="q-auth-foot">Ligipääs on lubatud ainult Firebase’i lisatud liikmetele. <a className="q-link" href={`${import.meta.env.BASE_URL}privacy.html`}>Andmekaitse</a></p>
+    <p className="q-auth-foot"><a className="q-link" href={`${import.meta.env.BASE_URL}privacy.html`}>Andmekaitse</a></p>
   </section></main>
 }
 
@@ -63,14 +63,12 @@ export function MemberSetupScreen({ email, busy, error, onCreate, onSignOut }) {
   </section></main>
 }
 
-export function AppShell({ mode, setMode, member, onOpenSettings, children }) {
+export function AppShell({ mode, setMode, onOpenSettings, children }) {
   return <div className="q-app-shell">
-    <aside className="q-sidebar"><QueueMark/><div className="q-sidebar-spacer"/><button className="q-user-shortcut" aria-label="Tööruumid ja konto" onClick={onOpenSettings}><span>{initials(member?.fullName)}</span><Settings2 size={15}/></button></aside>
     <main className="q-main">
       <header className="q-topbar">
         <nav className="q-mode-nav" aria-label="Töörežiim">
           <ModeButton active={mode === 'production'} onClick={() => setMode('production')} icon={<MonitorPlay size={16}/>} label="Production"/>
-          <ModeButton active={mode === 'edit'} onClick={() => setMode('edit')} icon={<ArrowLeftRight size={16}/>} label="Edit"/>
           <ViewModeMenu mode={mode} setMode={setMode}/>
         </nav>
         <div className="q-topbar-actions"><FullscreenButton/><button className={`q-settings-button ${mode === 'settings' ? 'is-active' : ''}`} onClick={onOpenSettings} aria-label="Tööruumid ja konto" title="Tööruumid ja konto"><Settings2 size={17}/><span>Tööruumid</span></button></div>
@@ -95,13 +93,14 @@ function ViewModeMenu({ mode, setMode }) {
     document.addEventListener('keydown', closeOnEscape)
     return () => { document.removeEventListener('pointerdown', closeOutside); document.removeEventListener('keydown', closeOnEscape) }
   }, [open])
-  const activeLabel = mode === 'host' ? 'Host' : mode === 'timer' ? 'Ekraanitimer' : 'Vaated'
+  const activeLabel = mode === 'host' ? 'Host' : mode === 'timer' ? 'Timer' : mode === 'edit' ? 'Edit' : 'Vaated'
   const choose = next => { setMode(next); setOpen(false) }
   return <div className="q-view-menu" ref={rootRef}>
-    <button className={`q-view-menu-trigger ${mode === 'host' || mode === 'timer' ? 'is-active' : ''}`} type="button" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(value => !value)}>{activeLabel}<ChevronDown size={14}/></button>
+    <button className={`q-view-menu-trigger ${mode === 'host' || mode === 'timer' || mode === 'edit' ? 'is-active' : ''}`} type="button" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(value => !value)}>{activeLabel}<ChevronDown size={14}/></button>
     {open && <div className="q-view-menu-popover" aria-label="Muud vaated">
+      <button type="button" aria-pressed={mode === 'edit'} onClick={() => choose('edit')}><Pencil size={15}/><span>Edit</span></button>
       <button type="button" aria-pressed={mode === 'host'} onClick={() => choose('host')}><Activity size={15}/><span>Host</span></button>
-      <button type="button" aria-pressed={mode === 'timer'} onClick={() => choose('timer')}><Timer size={15}/><span>Ekraanitimer</span></button>
+      <button type="button" aria-pressed={mode === 'timer'} onClick={() => choose('timer')}><Timer size={15}/><span>Timer</span></button>
     </div>}
   </div>
 }
@@ -183,7 +182,7 @@ export function ProductionView({
   return <div className={`q-show-workspace ${resizing ? 'is-resizing' : ''}`} ref={workspaceRef} style={{ '--q-split': `${split}%` }}>
     <section className="q-production-pane">
       <div className="q-stage-strip">
-        <div className={`q-stage-current ${current ? 'has-current' : ''}`} style={current ? { '--cue-color': current.color || '#e54b4b' } : undefined}>
+        <div className={`q-stage-current ${current ? 'has-current' : ''}`} style={current ? { '--cue-color': current.color || DEFAULT_COLORS[Math.max(0, timeline.currentIndex) % DEFAULT_COLORS.length] } : undefined}>
           {current ? <>
             <div className="q-stage-number">{currentPerformanceNumber ? String(currentPerformanceNumber).padStart(2, '0') : <ArrowLeftRight size={17}/>}</div>
             <div className="q-stage-copy"><h1>{current.title}</h1>{current.performer && <p>{current.performer}</p>}
@@ -235,6 +234,8 @@ export function CountdownView({ items, timeline, offline, onExit }) {
   const remaining = current && !isSceneChangeItem(current) && segment
     ? Math.ceil(Math.max(0, segment.end - timeline.positionSeconds))
     : 0
+  const timerClass = remaining === 0 ? 'is-ended' : remaining <= 30 ? 'is-warning' : ''
+  const displayTime = formatTimer(remaining)
   const onExitRef = useRef(onExit)
   onExitRef.current = onExit
   useEffect(() => {
@@ -244,9 +245,16 @@ export function CountdownView({ items, timeline, offline, onExit }) {
   }, [])
   return <main className="q-countdown-screen">
     {offline && <div className="q-offline-alert" role="alert">Internetiühendus katkes. Taimer töötab seni kohaliku ajastuse järgi.</div>}
-    <output className="q-countdown-time" role="timer" aria-live="off" aria-label={`Aega esinemise lõpuni ${formatClock(remaining)}`}>{formatClock(remaining)}</output>
+    <output className={`q-countdown-time ${timerClass}`} role="timer" aria-live="off" aria-label={`Aega esinemise lõpuni ${displayTime}`}>{displayTime}</output>
     <div className="q-countdown-controls"><FullscreenButton/><button className="q-fullscreen-button" type="button" onClick={onExit} aria-label="Välju taimerist" title="Välju taimerist"><X size={17}/></button></div>
   </main>
+}
+
+function formatTimer(totalSeconds) {
+  const safeSeconds = Math.max(0, Math.floor(Number(totalSeconds) || 0))
+  const minutes = Math.floor(safeSeconds / 60)
+  const seconds = safeSeconds % 60
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
 }
 
 function CueTimeline({ items, offsets, timeline, selectedId, onSelect, zoom, setZoom, viewportRef }) {
@@ -415,12 +423,16 @@ function EventSettingsEditor({ event, onSave }) {
   </div><button className="q-button q-button--quiet" disabled={!event || !dirty || saving} onClick={async () => { setSaving(true); try { if (await onSave(value)) setDraft(value) } finally { setSaving(false) } }}><Save size={15}/>{saving ? 'Salvestan…' : 'Salvesta'}</button></section>
 }
 
-export function SettingsPage({ events, selectedEventId, member, onSelectEvent, onCreateEvent, onSignOut }) {
+export function SettingsPage({ events, selectedEventId, member, onSelectEvent, onCreateEvent, onSignOut, onSaveColor }) {
+  const [color, setColor] = useState(isValidColor(member?.color) ? member.color : DEFAULT_MEMBER_COLOR)
+  const [savingColor, setSavingColor] = useState(false)
+  useEffect(() => setColor(isValidColor(member?.color) ? member.color : DEFAULT_MEMBER_COLOR), [member?.color])
+  const colorChanged = color !== (isValidColor(member?.color) ? member.color : DEFAULT_MEMBER_COLOR)
   const sorted = [...events].sort((a, b) => (timestampToMillis(a.startAt) ?? getStartMillis(a) ?? 0) - (timestampToMillis(b.startAt) ?? getStartMillis(b) ?? 0))
   return <section className="q-settings-page">
     <div className="q-settings-header"><h1>Tööruumid</h1><button className="q-button q-button--primary" onClick={onCreateEvent}><Plus size={16}/>Loo üritus</button></div>
     <div className="q-workspace-list">{sorted.map(event => <button key={event.id} className={`q-workspace-item ${selectedEventId === event.id ? 'is-selected' : ''}`} onClick={() => onSelectEvent(event.id)}><span className="q-workspace-date"><CalendarDays size={15}/>{formatEventDate(event)}</span><strong>{event.title}</strong><span className="q-workspace-meta">{event.venue || ''}{event.venue ? ' · ' : ''}{formatEventStart(event)}</span></button>)}{!events.length && <p className="q-empty">Üritusi pole. Loo esimene tööruum.</p>}</div>
-    <section className="q-account-panel"><div><span className="q-account-avatar">{initials(member?.fullName)}</span><div><strong>{member?.fullName}</strong><small>{member?.email}</small></div></div><a className="q-link" href={`${import.meta.env.BASE_URL}privacy.html`}>Andmekaitse</a><button className="q-button q-button--quiet" onClick={onSignOut}><LogOut size={15}/>Logi välja</button></section>
+    <section className="q-account-panel"><div><span className="q-account-avatar" style={{ color }}>{initials(member?.fullName)}</span><div><strong>{member?.fullName}</strong><small>{member?.email}</small></div></div><label className="q-member-color"><span>Vestluse värv</span><input type="color" value={color} onChange={event => setColor(event.target.value)} aria-label="Vestluse värv"/></label><button className="q-button q-button--quiet" disabled={!colorChanged || savingColor} onClick={async () => { setSavingColor(true); try { if (await onSaveColor(color)) setColor(color) } finally { setSavingColor(false) } }}>{savingColor ? 'Salvestan…' : 'Salvesta värv'}</button><a className="q-link" href={`${import.meta.env.BASE_URL}privacy.html`}>Andmekaitse</a><button className="q-button q-button--quiet" onClick={onSignOut}><LogOut size={15}/>Logi välja</button></section>
   </section>
 }
 
@@ -496,7 +508,7 @@ function ChatPanel({ eventId, messages, messagesReady, currentName, onSend, erro
   }
   return <div className="q-chat">{error && <p className="q-chat-error" role="alert">{error}</p>}<div className="q-chat-feed" ref={feedRef} aria-live="polite">
     {messages.map(message => <article key={message.id} className={`q-chat-message ${arrivingIds.has(message.id) ? 'is-new' : ''} ${message.important === true ? 'is-important' : ''}`}>
-      <div className="q-chat-meta"><strong>{message.author || currentName || 'Queue'}</strong><time>{formatMessageTime(message.createdAt)}</time>{message.important === true && <span className="q-chat-important-label"><Flag size={12} aria-hidden="true"/>TÄHTIS</span>}</div>
+      <div className="q-chat-meta"><strong style={{ color: isValidColor(message.authorColor) ? message.authorColor : DEFAULT_MEMBER_COLOR }}>{message.author || currentName || 'Queue'}</strong><time>{formatMessageTime(message.createdAt)}</time>{message.important === true && <span className="q-chat-important-label"><Flag size={12} aria-hidden="true"/>TÄHTIS</span>}</div>
       <p>{message.body}</p>
     </article>)}
     {!messages.length && <div className="q-chat-empty">Vestlust pole veel alustatud.</div>}

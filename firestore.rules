@@ -69,15 +69,20 @@ service cloud.firestore {
       allow create: if signedIn()
         && request.auth.uid == uid
         && !exists(memberRevocationPath(uid))
-        && request.resource.data.keys().hasOnly(['email', 'fullName', 'enabled'])
+        && request.resource.data.keys().hasOnly(['email', 'fullName', 'enabled', 'color'])
         && request.resource.data.keys().hasAll(['email', 'fullName', 'enabled'])
         && request.resource.data.email is string
         && request.resource.data.email == request.auth.token.email
         && request.resource.data.fullName is string
         && request.resource.data.fullName.size() > 0
         && request.resource.data.fullName.size() <= 120
-        && request.resource.data.enabled == true;
-      allow update, delete: if false;
+        && request.resource.data.enabled == true
+        && (!request.resource.data.keys().hasAny(['color']) || validColor(request.resource.data.color));
+      allow update: if isMember()
+        && request.auth.uid == uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['color'])
+        && validColor(request.resource.data.get('color', ''));
+      allow delete: if false;
     }
 
     match /memberRevocations/{uid} {
@@ -197,13 +202,16 @@ service cloud.firestore {
         allow read: if isMember() && eventExists(eventId) && resource.data.get('audience', 'all') == 'all';
         allow create: if isMember()
           && eventExists(eventId)
-          && request.resource.data.keys().hasOnly(['body', 'audience', 'author', 'authorId', 'createdAt', 'important'])
+          && request.resource.data.keys().hasOnly(['body', 'audience', 'author', 'authorId', 'authorColor', 'createdAt', 'important'])
           && request.resource.data.get('body', '') is string
           && request.resource.data.body.size() > 0
           && request.resource.data.body.size() <= 1200
           && request.resource.data.get('audience', '') == 'all'
           && request.resource.data.authorId == request.auth.uid
           && request.resource.data.author == get(memberPath(request.auth.uid)).data.fullName
+          && (!request.resource.data.keys().hasAny(['authorColor'])
+            || (validColor(request.resource.data.authorColor)
+              && request.resource.data.authorColor == get(memberPath(request.auth.uid)).data.get('color', '#c7cbd2')))
           && request.resource.data.get('important', false) is bool
           && request.resource.data.createdAt == request.time;
         allow update: if isMember()

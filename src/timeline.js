@@ -1,5 +1,6 @@
 export const NOTE_DEPARTMENTS = ['ALL', 'HELI', 'VALGUS', 'VIDEO', 'MUU']
 export const EVENT_TIME_ZONE = 'Europe/Tallinn'
+export const DEFAULT_MEMBER_COLOR = '#c7cbd2'
 
 export const isSceneChangeItem = item => item?.type === 'scene-change' || item?.type === 'Üleminek' || item?.type === 'Lava vahetus'
 
