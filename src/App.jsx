@@ -3,7 +3,7 @@ import { Settings2 } from 'lucide-react'
 import { onAuthStateChanged, sendPasswordResetEmail, signInWithEmailAndPassword, signOut } from 'firebase/auth'
 import {
   Timestamp, addDoc, collection, deleteDoc, doc, getDocs, limit, onSnapshot,
-  orderBy, or, query, runTransaction, serverTimestamp, updateDoc, where, writeBatch,
+  orderBy, or, query, runTransaction, serverTimestamp, setDoc, updateDoc, where, writeBatch,
 } from 'firebase/firestore'
 import { onValue, ref } from 'firebase/database'
 import { auth, db, isFirebaseConfigured, isServerClockConfigured, realtimeDb } from './firebase'
@@ -25,7 +25,7 @@ const MAX_QUEUE_ITEMS = 400
 function initialMode() {
   try {
     const saved = localStorage.getItem('queue-mode')
-    return ['production', 'host', 'edit', 'settings', 'timer'].includes(saved) ? saved : 'production'
+    return ['production', 'host', 'edit', 'settings'].includes(saved) ? saved : 'production'
   } catch { return 'production' }
 }
 
@@ -142,6 +142,8 @@ function App() {
   const [user, setUser] = useState(null)
   const [authReady, setAuthReady] = useState(false)
   const [member, setMember] = useState(null)
+  const [directoryMembers, setDirectoryMembers] = useState([])
+  const [directoryError, setDirectoryError] = useState('')
   const [membership, setMembership] = useState('loading')
   const [membershipRetry, setMembershipRetry] = useState(0)
   const [memberError, setMemberError] = useState('')
@@ -265,6 +267,49 @@ function App() {
     })
     return stop
   }, [user?.uid, user?.email, membershipRetry])
+
+  useEffect(() => {
+    if (!db || membership !== 'allowed' || !user) {
+      setDirectoryMembers([])
+      setDirectoryError('')
+      return undefined
+    }
+    const stop = onSnapshot(collection(db, 'memberDirectory'), snapshot => {
+      setDirectoryMembers(snapshot.docs.map(entry => ({ uid: entry.id, ...entry.data() })))
+      setDirectoryError('')
+    }, error => {
+      setDirectoryError(error?.code === 'permission-denied'
+        ? 'Liikmete loendi laadimine keelati. Uuenda Firestore Rules.'
+        : 'Liikmete loendi laadimine ebaõnnestus.')
+    })
+    return stop
+  }, [membership, user?.uid])
+
+  useEffect(() => {
+    if (!db || membership !== 'allowed' || !user || !member || !networkOnline) return undefined
+    const directoryRef = doc(db, 'memberDirectory', user.uid)
+    let writing = false
+    const publishPresence = async () => {
+      if (writing || !navigator.onLine) return
+      writing = true
+      try {
+        await setDoc(directoryRef, { fullName: member.fullName, lastSeenAt: serverTimestamp() }, { merge: true })
+      } catch {
+        // Presence is secondary to show control; do not block the production view.
+      } finally {
+        writing = false
+      }
+    }
+    void publishPresence()
+    const interval = window.setInterval(publishPresence, 60_000)
+    window.addEventListener('focus', publishPresence)
+    window.addEventListener('online', publishPresence)
+    return () => {
+      window.clearInterval(interval)
+      window.removeEventListener('focus', publishPresence)
+      window.removeEventListener('online', publishPresence)
+    }
+  }, [membership, user?.uid, member?.fullName, networkOnline])
 
   async function handleCreateMemberProfile(fullName) {
     const cleanName = String(fullName || '').trim()
@@ -684,15 +729,27 @@ function App() {
     }
   }
 
-  async function saveMemberColor(color) {
-    if (!db || !user || !isValidColor(color)) return false
+  async function saveMemberSettings(profile) {
+    const fullName = String(profile?.fullName || '').trim()
+    const color = profile?.color
+    if (!db || !user || !member || !isValidFullName(fullName) || fullName.length > 120 || !isValidColor(color)) return false
     try {
-      await updateDoc(doc(db, 'members', user.uid), { color })
-      setMember(current => current ? { ...current, color } : current)
-      showToast('Vestluse värv salvestatud')
+      const memberRef = doc(db, 'members', user.uid)
+      const directoryRef = doc(db, 'memberDirectory', user.uid)
+      await runTransaction(db, async transaction => {
+        const memberSnapshot = await transaction.get(memberRef)
+        const directorySnapshot = await transaction.get(directoryRef)
+        if (!memberSnapshot.exists()) throw new Error('Liikmeprofiili ei leitud.')
+        transaction.update(memberRef, { fullName, color })
+        const directoryData = { fullName, lastSeenAt: serverTimestamp() }
+        if (directorySnapshot.exists()) transaction.update(directoryRef, directoryData)
+        else transaction.set(directoryRef, directoryData)
+      })
+      setMember(current => current ? { ...current, fullName, color } : current)
+      showToast('Profiil salvestatud')
       return true
     } catch (error) {
-      showToast(error.code === 'permission-denied' ? 'Firebase Rules ei luba profiili värvi muuta. Uuenda Firestore Rules.' : 'Värvi salvestamine ebaõnnestus.')
+      showToast(error.code === 'permission-denied' ? 'Firebase Rules ei luba profiili muuta. Uuenda Firestore Rules.' : 'Profiili salvestamine ebaõnnestus.')
       return false
     }
   }
@@ -927,7 +984,7 @@ function App() {
     {eventsError && <div className="q-banner" role="alert">{eventsError}</div>}
     {itemsError && <div className="q-banner" role="alert">{itemsError}</div>}
     {notesError && <div className="q-banner" role="alert">{notesError}</div>}
-    {mode === 'settings' ? <SettingsPage events={events} selectedEventId={eventId} member={member} onSelectEvent={id => { setEventId(id); setMode('production') }} onCreateEvent={() => { setEventDialogError(''); setShowCreateEvent(true) }} onSignOut={logout} onSaveColor={saveMemberColor}/> : !event ? <section className="q-empty-workspace"><h1>{eventsReady ? 'Tööruumi pole valitud' : 'Laen tööruume…'}</h1>{eventsReady && <button className="q-button q-button--primary" onClick={() => setMode('settings')}><Settings2 size={15}/>Ava tööruumid</button>}</section> : mode === 'edit' ? <QueueEditor event={eventDoc || event} items={items} notesByItem={allNotesByItem} noteBusy={noteBusy} onAddNote={item => setNoteItem({ item, note: null })} onEditNote={(item, note) => setNoteItem({ item, note })} onDeleteNote={deleteNote} queueRevision={event.queueRevision} onSaveItem={saveItem} onDeleteItem={deleteItem} onMoveItem={moveItem} onAddItem={addQueueItem} onSaveEvent={saveEvent}/> : (mode === 'production' || mode === 'host') ? (
+    {mode === 'settings' ? <SettingsPage events={events} selectedEventId={eventId} member={member} directoryMembers={directoryMembers} directoryError={directoryError} onSelectEvent={id => { setEventId(id); setMode('production') }} onCreateEvent={() => { setEventDialogError(''); setShowCreateEvent(true) }} onSignOut={logout} onSaveProfile={saveMemberSettings}/> : !event ? <section className="q-empty-workspace"><h1>{eventsReady ? 'Tööruumi pole valitud' : 'Laen tööruume…'}</h1>{eventsReady && <button className="q-button q-button--primary" onClick={() => setMode('settings')}><Settings2 size={15}/>Ava tööruumid</button>}</section> : mode === 'edit' ? <QueueEditor event={eventDoc || event} items={items} notesByItem={allNotesByItem} noteBusy={noteBusy} onAddNote={item => setNoteItem({ item, note: null })} onEditNote={(item, note) => setNoteItem({ item, note })} onDeleteNote={deleteNote} queueRevision={event.queueRevision} onSaveItem={saveItem} onDeleteItem={deleteItem} onMoveItem={moveItem} onAddItem={addQueueItem} onSaveEvent={saveEvent}/> : (mode === 'production' || mode === 'host') ? (
       !itemsReady ? <div className="q-empty-workspace">Laen järjekorda…</div> : <>
         <ProductionView
           mode={mode}
@@ -941,6 +998,7 @@ function App() {
           noteFilter={noteFilter}
           setNoteFilter={setNoteFilter}
           messages={messages}
+          directoryMembers={directoryMembers}
           messagesReady={messagesReady}
           eventId={eventId}
           currentName={currentName}

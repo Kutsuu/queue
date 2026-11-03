@@ -12,9 +12,9 @@ Queue'i eesmärk on aidata kutsutud kooliürituse tehnilisel tiimil koordineerid
 
 ## 2. Vajalikkus ja töödeldavad andmed
 
-Rakendus töötleb liikme nime ja e-posti aadressi sisselogimiseks, liikmestaatuse kontrollimiseks ning sõnumi autorina kuvamiseks. Liige võib lisaks valida vestluses kuvatava nime värvi. Tööruumis töödeldakse sündmuse kuupäeva, algusaega, asukohta, esinemiste pealkirju, vajadusel esinejate nimesid, kestust, tehnilisi märkmeid ja tiimi sõnumeid. Seega võivad tööruumi andmed puudutada ka esinejaid, kellel Queue kontot ei ole; nende nimesid lisatakse ainult siis, kui see on lava korraldamiseks vajalik, ning need on nähtavad ainult sisselogitud Queue liikmetele. Realtime Database'ist loetakse ainult Firebase'i serveri ajavahet; tööruumi sisu sinna ei kirjutata.
+Rakendus töötleb liikme nime ja e-posti aadressi sisselogimiseks, liikmestaatuse kontrollimiseks ning sõnumi autorina kuvamiseks. Liige võib muuta oma kuvatavat nime ja valida vestluses kuvatava nime värvi. Aktiivsed liikmed näevad liikmete nimede kõrval viimase aktiivsuse aega, et tiim saaks teada, kes on hiljuti Queue'i kasutanud. Tööruumis töödeldakse sündmuse kuupäeva, algusaega, asukohta, esinemiste pealkirju, vajadusel esinejate nimesid, kestust, tehnilisi märkmeid ja tiimi sõnumeid. Seega võivad tööruumi andmed puudutada ka esinejaid, kellel Queue kontot ei ole; nende nimesid lisatakse ainult siis, kui see on lava korraldamiseks vajalik, ning need on nähtavad ainult sisselogitud Queue liikmetele. Realtime Database'ist loetakse ainult Firebase'i serveri ajavahet; tööruumi sisu sinna ei kirjutata.
 
-Firebase Authenticationis puudub avalik registreerumine. Kasutajakontod lisatakse Firebase'i haldaja poolt. Esimesel sisselogimisel loob Queue kasutajale tema enda UID alla `members/{UID}` profiili, mis sisaldab Auth-konto e-posti ja kasutaja sisestatud täisnime. Firestore Rules lubavad tööruumi andmeid lugeda ja muuta ainult aktiivsel liikmel ning blokeerivad kliendil profiili muutmise ja teiste kasutajate lisamise. Tühistatud UID-d saab panna eraldi, klientidele suletud `memberRevocations` loendisse. Tööruumi andmeid on vaja Queue'i põhifunktsioonideks, mitte reklaamiks, profiilide koostamiseks ega kasutajate hindamiseks.
+Firebase Authenticationis puudub avalik registreerumine. Kasutajakontod lisatakse Firebase'i haldaja poolt. Esimesel sisselogimisel loob Queue kasutajale tema enda UID alla `members/{UID}` profiili, mis sisaldab Auth-konto e-posti ja kasutaja sisestatud täisnime, ning `memberDirectory/{UID}` kirje, mis ei sisalda e-posti. Firestore Rules lubavad liikmel muuta ainult enda kuvatavat nime ja värvi; e-posti, liikmestaatust ja teiste profiile klient muuta ei saa. Liikmete loend ja viimase aktiivsuse aeg on nähtavad ainult aktiivsetele Queue liikmetele. Tühistatud UID-d saab panna eraldi, klientidele suletud `memberRevocations` loendisse. Tööruumi andmeid on vaja Queue'i põhifunktsioonideks, mitte reklaamiks, profiilide koostamiseks ega kasutajate hindamiseks.
 
 ## 3. Mõju kasutajatele ja tasakaal
 
@@ -25,7 +25,7 @@ Võimalik mõju on piiratud, sest sisu ei ole avalik, ligipääs on autentitud l
 ## 4. Kaitsemeetmed ja säilitamine
 
 - Firebase Authentication nõuab sisselogimist ning avalik konto loomine on välja lülitatud; Firestore Rules kontrollivad aktiivset liikmestaatust, konto e-posti ja tühistatud UID-de loendit.
-- Firestore Rules piiravad ligipääsu tööruumidele ja valideerivad salvestatavate andmete struktuuri.
+- Firestore Rules piiravad ligipääsu tööruumidele ja liikmete kataloogile, valideerivad salvestatavate andmete struktuuri ning hoiavad e-posti aadressid liikmete kataloogist eraldi.
 - Kasutajaid teavitatakse töötlemisest selles andmekaitseteates; andmetega seotud taotlused saab esitada kontaktile `sergeizuravl@gmail.com`.
 - Tööruumi sisu säilitatakse seni, kuni seda on vaja sündmuste ettevalmistamiseks ja tehnilise töö korraldamiseks; kui seda enam vaja ei ole, kustutab vastutav töötleja selle Firebase'ist.
 - Vestlusse ja märkmetesse ei tohi lisada tundlikke ega eesmärgi jaoks mittevajalikke isikuandmeid.

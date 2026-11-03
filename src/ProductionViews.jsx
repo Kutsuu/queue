@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Activity, ArrowLeftRight, CalendarDays, Check, ChevronDown, GripVertical,
-  LogOut, Mail, Maximize, Minimize, MonitorPlay, Pause, Play, Plus, Save, Send, Timer,
+  Activity, ArrowLeftRight, CalendarDays, Check, ChevronDown, Clock3, GripVertical,
+  LogOut, Mail, MapPin, Maximize, Minimize, MonitorPlay, Pause, Play, Plus, Save, Send, Timer,
   Flag, Pencil, Settings2, SkipBack, SkipForward, Trash2, X, ZoomIn, ZoomOut,
 } from 'lucide-react'
 import {
@@ -71,7 +71,7 @@ export function AppShell({ mode, setMode, onOpenSettings, children }) {
           <ModeButton active={mode === 'production'} onClick={() => setMode('production')} icon={<MonitorPlay size={16}/>} label="Production"/>
           <ViewModeMenu mode={mode} setMode={setMode}/>
         </nav>
-        <div className="q-topbar-actions"><FullscreenButton/><button className={`q-settings-button ${mode === 'settings' ? 'is-active' : ''}`} onClick={onOpenSettings} aria-label="Tööruumid ja konto" title="Tööruumid ja konto"><Settings2 size={17}/><span>Tööruumid</span></button></div>
+        <div className="q-topbar-actions"><FullscreenButton/><button className={`q-settings-button ${mode === 'settings' ? 'is-active' : ''}`} onClick={onOpenSettings} aria-label="Sätted" title="Sätted"><Settings2 size={17}/><span>Sätted</span></button></div>
       </header>
       <div className={`q-content ${mode === 'production' || mode === 'host' ? 'q-content--show' : ''}`}>{children}</div>
     </main>
@@ -98,8 +98,8 @@ function ViewModeMenu({ mode, setMode }) {
   return <div className="q-view-menu" ref={rootRef}>
     <button className={`q-view-menu-trigger ${mode === 'host' || mode === 'timer' || mode === 'edit' ? 'is-active' : ''}`} type="button" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(value => !value)}>{activeLabel}<ChevronDown size={14}/></button>
     {open && <div className="q-view-menu-popover" aria-label="Muud vaated">
-      <button type="button" aria-pressed={mode === 'edit'} onClick={() => choose('edit')}><Pencil size={15}/><span>Edit</span></button>
       <button type="button" aria-pressed={mode === 'host'} onClick={() => choose('host')}><Activity size={15}/><span>Host</span></button>
+      <button type="button" aria-pressed={mode === 'edit'} onClick={() => choose('edit')}><Pencil size={15}/><span>Edit</span></button>
       <button type="button" aria-pressed={mode === 'timer'} onClick={() => choose('timer')}><Timer size={15}/><span>Timer</span></button>
     </div>}
   </div>
@@ -134,7 +134,7 @@ function QueueMark() {
 export function ProductionView({
   mode, event, items, timeline, serverNow, selectedId, onSelect,
   notesByItem, noteFilter, setNoteFilter,
-  messages, messagesReady, eventId, currentName, onSendMessage, chatError,
+  messages, messagesReady, directoryMembers, eventId, currentName, onSendMessage, chatError,
   onSkipBack, onSkipForward, onTogglePlay, onJumpSelected, busy, clockWarning, networkOnline,
 }) {
   const isHost = mode === 'host'
@@ -224,7 +224,7 @@ export function ProductionView({
     </section>
 
     <div className="q-show-splitter" role="separator" aria-label="Muuda vestluse suurust" aria-orientation="horizontal" aria-valuemin={Math.round(splitLimits.min)} aria-valuemax={Math.round(splitLimits.max)} aria-valuenow={Math.round(split)} tabIndex={0} onPointerDown={e => { e.preventDefault(); setResizing(true) }} onKeyDown={e => { if (e.key === 'ArrowUp') setSplit(v => Math.min(splitLimits.max, v + 3)); if (e.key === 'ArrowDown') setSplit(v => Math.max(splitLimits.min, v - 3)) }}><span/></div>
-    <section className="q-chat-pane"><ChatPanel eventId={eventId} messages={messages} messagesReady={messagesReady} currentName={currentName} onSend={onSendMessage} error={chatError} networkOnline={networkOnline}/></section>
+    <section className="q-chat-pane"><ChatPanel eventId={eventId} messages={messages} messagesReady={messagesReady} directoryMembers={directoryMembers} currentName={currentName} onSend={onSendMessage} error={chatError} networkOnline={networkOnline}/></section>
   </div>
 }
 
@@ -423,17 +423,67 @@ function EventSettingsEditor({ event, onSave }) {
   </div><button className="q-button q-button--quiet" disabled={!event || !dirty || saving} onClick={async () => { setSaving(true); try { if (await onSave(value)) setDraft(value) } finally { setSaving(false) } }}><Save size={15}/>{saving ? 'Salvestan…' : 'Salvesta'}</button></section>
 }
 
-export function SettingsPage({ events, selectedEventId, member, onSelectEvent, onCreateEvent, onSignOut, onSaveColor }) {
+export function SettingsPage({ events, selectedEventId, member, directoryMembers, directoryError, onSelectEvent, onCreateEvent, onSignOut, onSaveProfile }) {
+  const [fullName, setFullName] = useState(member?.fullName || '')
   const [color, setColor] = useState(isValidColor(member?.color) ? member.color : DEFAULT_MEMBER_COLOR)
-  const [savingColor, setSavingColor] = useState(false)
-  useEffect(() => setColor(isValidColor(member?.color) ? member.color : DEFAULT_MEMBER_COLOR), [member?.color])
-  const colorChanged = color !== (isValidColor(member?.color) ? member.color : DEFAULT_MEMBER_COLOR)
+  const [savingProfile, setSavingProfile] = useState(false)
+  const [now, setNow] = useState(Date.now())
+  useEffect(() => {
+    setFullName(member?.fullName || '')
+    setColor(isValidColor(member?.color) ? member.color : DEFAULT_MEMBER_COLOR)
+  }, [member?.fullName, member?.color])
+  useEffect(() => {
+    const interval = window.setInterval(() => setNow(Date.now()), 30_000)
+    return () => window.clearInterval(interval)
+  }, [])
+  const currentColor = isValidColor(member?.color) ? member.color : DEFAULT_MEMBER_COLOR
+  const profileChanged = fullName.trim() !== (member?.fullName || '') || color !== currentColor
   const sorted = [...events].sort((a, b) => (timestampToMillis(a.startAt) ?? getStartMillis(a) ?? 0) - (timestampToMillis(b.startAt) ?? getStartMillis(b) ?? 0))
+  const sortedMembers = [...directoryMembers].sort((a, b) => String(a.fullName || '').localeCompare(String(b.fullName || ''), 'et'))
   return <section className="q-settings-page">
-    <div className="q-settings-header"><h1>Tööruumid</h1><button className="q-button q-button--primary" onClick={onCreateEvent}><Plus size={16}/>Loo üritus</button></div>
-    <div className="q-workspace-list">{sorted.map(event => <button key={event.id} className={`q-workspace-item ${selectedEventId === event.id ? 'is-selected' : ''}`} onClick={() => onSelectEvent(event.id)}><span className="q-workspace-date"><CalendarDays size={15}/>{formatEventDate(event)}</span><strong>{event.title}</strong><span className="q-workspace-meta">{event.venue || ''}{event.venue ? ' · ' : ''}{formatEventStart(event)}</span></button>)}{!events.length && <p className="q-empty">Üritusi pole. Loo esimene tööruum.</p>}</div>
-    <section className="q-account-panel"><div><span className="q-account-avatar" style={{ color }}>{initials(member?.fullName)}</span><div><strong>{member?.fullName}</strong><small>{member?.email}</small></div></div><label className="q-member-color"><span>Vestluse värv</span><input type="color" value={color} onChange={event => setColor(event.target.value)} aria-label="Vestluse värv"/></label><button className="q-button q-button--quiet" disabled={!colorChanged || savingColor} onClick={async () => { setSavingColor(true); try { if (await onSaveColor(color)) setColor(color) } finally { setSavingColor(false) } }}>{savingColor ? 'Salvestan…' : 'Salvesta värv'}</button><a className="q-link" href={`${import.meta.env.BASE_URL}privacy.html`}>Andmekaitse</a><button className="q-button q-button--quiet" onClick={onSignOut}><LogOut size={15}/>Logi välja</button></section>
+    <div className="q-settings-page-head"><h1>Sätted</h1></div>
+    <section className="q-settings-section">
+      <header className="q-settings-section-head"><h2>Sündmused</h2><button className="q-button q-button--primary" onClick={onCreateEvent}><Plus size={16}/>Loo üritus</button></header>
+      <div className="q-workspace-list">{sorted.map(event => <button key={event.id} className={`q-workspace-item ${selectedEventId === event.id ? 'is-selected' : ''}`} onClick={() => onSelectEvent(event.id)}><strong>{event.title}</strong><span className="q-workspace-date"><CalendarDays size={15}/>{formatEventDate(event)}</span><span className="q-workspace-meta">{event.venue && <span><MapPin size={14}/>{event.venue}</span>}<span><Clock3 size={14}/>{formatEventStart(event)}</span></span></button>)}{!events.length && <p className="q-empty">Üritusi pole. Loo esimene sündmus.</p>}</div>
+    </section>
+    <section className="q-settings-section">
+      <header className="q-settings-section-head"><h2>Liikmed</h2></header>
+      {directoryError && <p className="q-alert" role="alert">{directoryError}</p>}
+      <div className="q-member-list">{sortedMembers.map(person => {
+        const presence = getMemberPresence(person, now)
+        return <article className="q-member-row" key={person.uid}>
+          <span className={`q-member-status-dot is-${presence.state}`} aria-hidden="true"/>
+          <strong>{person.fullName || 'Nimetu liige'}</strong>
+          <span className={`q-member-presence is-${presence.state}`}>{presence.label}</span>
+        </article>
+      })}{!directoryError && !sortedMembers.length && <p className="q-empty">Liikmete loendit pole veel.</p>}</div>
+    </section>
+    <section className="q-settings-section">
+      <header className="q-settings-section-head"><h2>Konto</h2></header>
+      <div className="q-account-settings">
+        <div className="q-account-identity"><span className="q-account-avatar" style={{ color }}>{initials(fullName)}</span><div><strong>{member?.fullName}</strong><small>{member?.email}</small></div></div>
+        <div className="q-profile-fields">
+          <label>Nimi<input value={fullName} onChange={event => setFullName(event.target.value)} maxLength={120} autoComplete="name"/></label>
+          <label className="q-member-color"><span>Vestluse värv</span><span className="q-color-control"><input type="color" value={color} onChange={event => setColor(event.target.value)} aria-label="Vestluse värv"/><code>{color.toUpperCase()}</code></span></label>
+        </div>
+        <div className="q-account-actions"><button className="q-button q-button--quiet" onClick={onSignOut}><LogOut size={15}/>Logi välja</button><button className="q-button q-button--primary" disabled={!profileChanged || !isValidFullName(fullName) || fullName.trim().length > 120 || savingProfile} onClick={async () => { setSavingProfile(true); try { await onSaveProfile({ fullName, color }) } finally { setSavingProfile(false) } }}>{savingProfile ? 'Salvestan…' : 'Salvesta'}</button></div>
+      </div>
+    </section>
   </section>
+}
+
+function getMemberPresence(member, now) {
+  const lastSeen = timestampToMillis(member.lastSeenAt)
+  if (lastSeen === null) return { state: 'unknown', label: 'Pole veel võrgus olnud' }
+  const age = Math.max(0, now - lastSeen)
+  if (age <= 2 * 60_000) return { state: 'online', label: 'Võrgus' }
+  if (age <= 24 * 60 * 60_000) {
+    const minutes = Math.max(1, Math.floor(age / 60_000))
+    const label = minutes < 60 ? `${minutes} min tagasi` : `${Math.floor(minutes / 60)} h tagasi`
+    return { state: 'recent', label: `Viimati võrgus ${label}` }
+  }
+  const formatted = new Intl.DateTimeFormat('et-EE', { dateStyle: 'medium', timeStyle: 'short', timeZone: EVENT_TIME_ZONE }).format(new Date(lastSeen))
+  return { state: 'offline', label: `Viimati võrgus ${formatted}` }
 }
 
 export function CreateEventDialog({ onClose, onCreate, busy, error }) {
@@ -456,7 +506,7 @@ export function NoteDialog({ item, note, onClose, onSave, busy, error }) {
   </form></Modal>
 }
 
-function ChatPanel({ eventId, messages, messagesReady, currentName, onSend, error, networkOnline }) {
+function ChatPanel({ eventId, messages, messagesReady, directoryMembers, currentName, onSend, error, networkOnline }) {
   const [text, setText] = useState('')
   const [important, setImportant] = useState(false)
   const [sending, setSending] = useState(false)
@@ -466,6 +516,7 @@ function ChatPanel({ eventId, messages, messagesReady, currentName, onSend, erro
   const activeEventId = useRef(eventId)
   const animationTimer = useRef(null)
   const feedRef = useRef(null)
+  const directoryById = useMemo(() => Object.fromEntries(directoryMembers.map(person => [person.uid, person])), [directoryMembers])
   useEffect(() => { if (feedRef.current) feedRef.current.scrollTop = feedRef.current.scrollHeight }, [messages.length])
   useEffect(() => {
     if (activeEventId.current !== eventId) {
@@ -508,7 +559,7 @@ function ChatPanel({ eventId, messages, messagesReady, currentName, onSend, erro
   }
   return <div className="q-chat">{error && <p className="q-chat-error" role="alert">{error}</p>}<div className="q-chat-feed" ref={feedRef} aria-live="polite">
     {messages.map(message => <article key={message.id} className={`q-chat-message ${arrivingIds.has(message.id) ? 'is-new' : ''} ${message.important === true ? 'is-important' : ''}`}>
-      <div className="q-chat-meta"><strong style={{ color: isValidColor(message.authorColor) ? message.authorColor : DEFAULT_MEMBER_COLOR }}>{message.author || currentName || 'Queue'}</strong><time>{formatMessageTime(message.createdAt)}</time>{message.important === true && <span className="q-chat-important-label"><Flag size={12} aria-hidden="true"/>TÄHTIS</span>}</div>
+      <div className="q-chat-meta"><strong style={{ color: isValidColor(message.authorColor) ? message.authorColor : DEFAULT_MEMBER_COLOR }}>{directoryById[message.authorId]?.fullName || message.author || currentName || 'Queue'}</strong><time>{formatMessageTime(message.createdAt)}</time>{message.important === true && <span className="q-chat-important-label"><Flag size={12} aria-hidden="true"/>TÄHTIS</span>}</div>
       <p>{message.body}</p>
     </article>)}
     {!messages.length && <div className="q-chat-empty">Vestlust pole veel alustatud.</div>}

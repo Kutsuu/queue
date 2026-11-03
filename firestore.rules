@@ -80,8 +80,31 @@ service cloud.firestore {
         && (!request.resource.data.keys().hasAny(['color']) || validColor(request.resource.data.color));
       allow update: if isMember()
         && request.auth.uid == uid
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['color'])
-        && validColor(request.resource.data.get('color', ''));
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['color', 'fullName'])
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['color'])
+          || validColor(request.resource.data.get('color', '')))
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['fullName'])
+          || (request.resource.data.get('fullName', '') is string
+            && request.resource.data.fullName.size() > 0
+            && request.resource.data.fullName.size() <= 120));
+      allow delete: if false;
+    }
+
+    match /memberDirectory/{uid} {
+      allow get, list: if isMember();
+      allow create: if isMember()
+        && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['fullName', 'lastSeenAt'])
+        && request.resource.data.keys().hasAll(['fullName', 'lastSeenAt'])
+        && request.resource.data.fullName == getAfter(memberPath(uid)).data.fullName
+        && request.resource.data.lastSeenAt == request.time;
+      allow update: if isMember()
+        && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['fullName', 'lastSeenAt'])
+        && request.resource.data.keys().hasAll(['fullName', 'lastSeenAt'])
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['fullName', 'lastSeenAt'])
+        && request.resource.data.fullName == getAfter(memberPath(uid)).data.fullName
+        && request.resource.data.lastSeenAt == request.time;
       allow delete: if false;
     }
 
