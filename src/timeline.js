@@ -1,4 +1,4 @@
-export const NOTE_DEPARTMENTS = ['ALL', 'HELI', 'VALGUS', 'VIDEO']
+export const NOTE_DEPARTMENTS = ['ALL', 'HELI', 'VALGUS', 'VIDEO', 'MUU']
 export const EVENT_TIME_ZONE = 'Europe/Tallinn'
 
 export const isSceneChangeItem = item => item?.type === 'scene-change' || item?.type === 'Üleminek' || item?.type === 'Lava vahetus'
@@ -190,7 +190,7 @@ export function normalizeLegacyDepartment(note) {
 }
 
 export function isValidFullName(value) {
-  return /^\S+\s+\S+$/u.test(String(value || '').trim())
+  return typeof value === 'string' && value.trim().length > 0
 }
 
 export function isValidColor(value) {

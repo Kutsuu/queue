@@ -19,7 +19,9 @@ service cloud.firestore {
         && exists(memberPath(request.auth.uid))
         && get(memberPath(request.auth.uid)).data.get('enabled', false) == true
         && get(memberPath(request.auth.uid)).data.get('email', '') == request.auth.token.email
-        && get(memberPath(request.auth.uid)).data.get('fullName', '').matches('^\\S+\\s+\\S+$');
+        && get(memberPath(request.auth.uid)).data.get('fullName', '') is string
+        && get(memberPath(request.auth.uid)).data.fullName.size() > 0
+        && get(memberPath(request.auth.uid)).data.fullName.size() <= 120;
     }
 
     function eventExists(eventId) {
@@ -72,8 +74,8 @@ service cloud.firestore {
         && request.resource.data.email is string
         && request.resource.data.email == request.auth.token.email
         && request.resource.data.fullName is string
+        && request.resource.data.fullName.size() > 0
         && request.resource.data.fullName.size() <= 120
-        && request.resource.data.fullName.matches('^\\S+\\s+\\S+$')
         && request.resource.data.enabled == true;
       allow update, delete: if false;
     }
@@ -164,7 +166,7 @@ service cloud.firestore {
         match /notes/{noteId} {
           allow read: if isMember()
             && eventExists(eventId)
-            && (resource.data.get('department', '') in ['ALL', 'HELI', 'VALGUS', 'VIDEO']
+            && (resource.data.get('department', '') in ['ALL', 'HELI', 'VALGUS', 'VIDEO', 'MUU']
               || resource.data.get('audience', '') in ['all', 'sound', 'lighting', 'video']);
           allow create: if isMember()
             && eventExists(eventId)
@@ -173,7 +175,7 @@ service cloud.firestore {
             && request.resource.data.get('body', '') is string
             && request.resource.data.body.size() > 0
             && request.resource.data.body.size() <= 800
-            && request.resource.data.get('department', '') in ['ALL', 'HELI', 'VALGUS', 'VIDEO']
+            && request.resource.data.get('department', '') in ['ALL', 'HELI', 'VALGUS', 'VIDEO', 'MUU']
             && request.resource.data.authorId == request.auth.uid
             && request.resource.data.author == get(memberPath(request.auth.uid)).data.fullName
             && request.resource.data.updatedAt == request.time;
@@ -183,7 +185,7 @@ service cloud.firestore {
             && request.resource.data.get('body', '') is string
             && request.resource.data.body.size() > 0
             && request.resource.data.body.size() <= 800
-            && request.resource.data.get('department', '') in ['ALL', 'HELI', 'VALGUS', 'VIDEO']
+            && request.resource.data.get('department', '') in ['ALL', 'HELI', 'VALGUS', 'VIDEO', 'MUU']
             && request.resource.data.get('authorId', '') == resource.data.get('authorId', '')
             && request.resource.data.get('author', '') == resource.data.get('author', '')
             && request.resource.data.updatedAt == request.time;

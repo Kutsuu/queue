@@ -9,8 +9,8 @@ Queue on kooliürituste tehnilise tiimi ühine tööruum. Kasutajaliides on eest
 - Queue avab Firestore’i andmed ainult siis, kui kasutajal on aktiivne `members/{UID}` kirje.
 - Avalik registreerimine peab Firebase Authenticationis olema välja lülitatud. Kui see on sisse lülitatud, saab igaüks konto luua ja Queue liikmeks registreeruda.
 - Kõigil lubatud liikmetel on samad Queue õigused. Rakenduses pole administraatori rolli ega sündmuse kustutamise nuppu.
-- Kasutaja nimi peab koosnema täpselt kahest sõnast: eesnimi ja perekonnanimi.
-- Märkmete osakonnad kuvatakse `KÕIK`, `HELI`, `VALGUS`, `VIDEO` (andmebaasis salvestatakse `KÕIK` tehnilise väärtusena `ALL`). Kõik liikmed näevad kõiki märkmeid ja võivad neid filtriga sortida.
+- Kasutaja nimi on vabatekst (kuni 120 märki) ja kuvatakse vestluses sõnumi autorina.
+- Märkmete osakonnad kuvatakse `KÕIK`, `HELI`, `VALGUS`, `VIDEO`, `MUU` (andmebaasis salvestatakse `KÕIK` tehnilise väärtusena `ALL`). Kõik liikmed näevad kõiki märkmeid ja võivad neid filtriga sortida.
 
 ## Firebase’i seadistamine
 
@@ -41,7 +41,7 @@ Firebase API key on avalik projektiseade koodis. Lisa .env.local faili Firebase 
 6. **Lisa kasutaja:**
    - Firebase Console → Authentication → Users → Add user. Kasuta kasutaja e-posti ja ajutist juhuslikku parooli; ära jaga seda parooli.
    - Palu kasutajal Queue sisselogimislehel valida **Esimene kord või unustasid parooli?**. Firebase saadab lingi parooli seadistamiseks. Sama toiming sobib hiljem parooli taastamiseks.
-   - Esimesel sisselogimisel sisestab kasutaja nime kujul `Eesnimi Perekonnanimi`. Queue loob tema UID alla Firestore’i `members/{UID}` dokumendi väljadega `email`, `fullName` ja `enabled: true`. Firestore’i dokumenti pole vaja käsitsi luua.
+   - Esimesel sisselogimisel sisestab kasutaja nime, mida tiim tunneb. Queue loob tema UID alla Firestore’i `members/{UID}` dokumendi väljadega `email`, `fullName` ja `enabled: true`. Firestore’i dokumenti pole vaja käsitsi luua.
 
    Ligipääsu sulgemiseks määra olemasolevas `members/{UID}` dokumendis `enabled` väärtuseks `false` ja peata konto Firebase Authenticationis. Kui eemaldad liikme dokumendi, loo enne seda Firebase Console’is `memberRevocations/{UID}` dokument, näiteks väljaga `revokedAt` (timestamp). Selle UID-ga kasutaja ei saa enam profiili ise uuesti luua. Rakendus ei luba klientidel seda loendit lugeda ega muuta.
 

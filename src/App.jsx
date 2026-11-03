@@ -3,7 +3,7 @@ import { Settings2 } from 'lucide-react'
 import { onAuthStateChanged, sendPasswordResetEmail, signInWithEmailAndPassword, signOut } from 'firebase/auth'
 import {
   Timestamp, addDoc, collection, deleteDoc, doc, getDocs, limit, onSnapshot,
-  orderBy, query, runTransaction, serverTimestamp, updateDoc, where, writeBatch,
+  orderBy, or, query, runTransaction, serverTimestamp, updateDoc, where, writeBatch,
 } from 'firebase/firestore'
 import { onValue, ref } from 'firebase/database'
 import { auth, db, isFirebaseConfigured, isServerClockConfigured, realtimeDb } from './firebase'
@@ -13,11 +13,11 @@ import {
   readTimelineState, timestampToMillis,
 } from './timeline'
 import {
-  AccessScreen, AppShell, AuthScreen, CreateEventDialog, MemberSetupScreen, NoteDialog,
+  AccessScreen, AppShell, AuthScreen, CountdownView, CreateEventDialog, MemberSetupScreen, NoteDialog,
   ProductionView, QueueEditor, SettingsPage,
 } from './ProductionViews'
 
-const NOTE_QUERY_DEPARTMENTS = ['ALL', 'HELI', 'VALGUS', 'VIDEO']
+const NOTE_QUERY_DEPARTMENTS = ['ALL', 'HELI', 'VALGUS', 'VIDEO', 'MUU']
 const LEGACY_NOTE_AUDIENCES = ['all', 'sound', 'lighting', 'video']
 const DEFAULT_COLORS = ['#7645ff', '#bd5c41', '#e58f98', '#176c68', '#e000d0', '#4a8d22', '#00a8bd', '#357de0']
 const MAX_QUEUE_ITEMS = 400
@@ -25,7 +25,7 @@ const MAX_QUEUE_ITEMS = 400
 function initialMode() {
   try {
     const saved = localStorage.getItem('queue-mode')
-    return ['production', 'host', 'edit', 'settings'].includes(saved) ? saved : 'production'
+    return ['production', 'host', 'edit', 'settings', 'timer'].includes(saved) ? saved : 'production'
   } catch { return 'production' }
 }
 
@@ -97,8 +97,8 @@ function getObservedNoteItems(items, event, mode) {
   if (mode !== 'production' && mode !== 'host') return []
   const currentIndex = items.findIndex(item => item.id === event?.timeline?.itemId)
   const visible = currentIndex >= 0 && !isSceneChangeItem(items[currentIndex]) ? [items[currentIndex]] : []
-  const upcoming = items.slice(currentIndex + 1).filter(item => !isSceneChangeItem(item)).slice(0, 5)
-  const next = currentIndex < 0 ? items.filter(item => !isSceneChangeItem(item)).slice(0, 5) : upcoming
+  const upcoming = items.slice(currentIndex + 1).filter(item => !isSceneChangeItem(item))
+  const next = currentIndex < 0 ? items.filter(item => !isSceneChangeItem(item)) : upcoming
   return [...visible, ...next]
 }
 
@@ -173,11 +173,13 @@ function App() {
   const [clockOffset, setClockOffset] = useState(null)
   const [clockError, setClockError] = useState('')
   const [online, setOnline] = useState(typeof navigator === 'undefined' ? true : navigator.onLine)
+  const [firebaseConnected, setFirebaseConnected] = useState(!realtimeDb)
   const [chatPaneError, setChatPaneError] = useState('')
   const [notesError, setNotesError] = useState('')
   const toastTimer = useRef(null)
   const queueRevisionRef = useRef({ eventId: '', revision: 0 })
   const operationBusyRef = useRef(false)
+  const networkOnline = online && (!realtimeDb || firebaseConnected)
 
   const beginOperation = useCallback(() => {
     if (operationBusyRef.current) return false
@@ -267,7 +269,7 @@ function App() {
   async function handleCreateMemberProfile(fullName) {
     const cleanName = String(fullName || '').trim()
     if (!db || !user?.email || !isValidFullName(cleanName)) {
-      setProfileError('Sisesta ees- ja perekonnanimi kahe sõnana.')
+      setProfileError('Sisesta nimi.')
       return false
     }
     setProfileError('')
@@ -290,7 +292,8 @@ function App() {
   }
 
   useEffect(() => {
-    if (!realtimeDb) { setClockOffset(null); return undefined }
+    if (!realtimeDb) { setClockOffset(null); setFirebaseConnected(true); return undefined }
+    setFirebaseConnected(false)
     const stop = onValue(ref(realtimeDb, '.info/serverTimeOffset'), snapshot => {
       const value = snapshot.val()
       if (typeof value === 'number' && Number.isFinite(value)) {
@@ -303,7 +306,10 @@ function App() {
       setClockOffset(null)
       setClockError(error?.message || 'Firebase server clock offset is unavailable.')
     })
-    return stop
+    const stopConnection = onValue(ref(realtimeDb, '.info/connected'), snapshot => {
+      setFirebaseConnected(snapshot.val() === true)
+    }, () => setFirebaseConnected(false))
+    return () => { stop(); stopConnection() }
   }, [])
 
   useEffect(() => {
@@ -316,7 +322,7 @@ function App() {
   const event = events.find(item => item.id === eventId) || null
 
   useEffect(() => {
-    const activeView = mode === 'production' || mode === 'host'
+    const activeView = mode === 'production' || mode === 'host' || mode === 'timer'
     if (!activeView || membership !== 'allowed' || !user) return undefined
     const timerState = eventDoc || event
     const playing = deriveTimeline(timerState, items, Date.now() + (clockOffset ?? 0)).effectiveStatus === 'playing'
@@ -398,24 +404,24 @@ function App() {
     const publish = () => {
       const all = [...sources.values()].flat()
       const unique = [...new Map(all.map(note => [note.id, note])).values()]
-      const activeIds = new Set(observedNoteItems.map(item => item.id))
-      const uniqueIds = new Set(unique.map(note => note.id))
-      setNotes(current => [...current.filter(note => activeIds.has(note.itemId) && !uniqueIds.has(note.id)), ...unique])
+      setNotes(unique)
     }
     observedNoteItems.forEach(item => {
       const base = collection(db, 'events', eventId, 'items', item.id, 'notes')
-      const subscribe = (key, sourceQuery) => {
-        stops.push(onSnapshot(sourceQuery, snapshot => {
-          sources.set(`${item.id}:${key}`, snapshot.docs.map(note => ({ id: note.id, itemId: item.id, ...note.data() })))
-          publish()
-          setNotesError('')
-        }, error => {
-          if (error.code !== 'permission-denied') setNotesError('Märkmete laadimine ebaõnnestus.')
-          else setNotesError('Firebase Rules ei luba märkmeid laadida.')
-        }))
-      }
-      subscribe('departments', query(base, where('department', 'in', NOTE_QUERY_DEPARTMENTS), orderBy('updatedAt', 'desc')))
-      subscribe('legacy', query(base, where('audience', 'in', LEGACY_NOTE_AUDIENCES), orderBy('updatedAt', 'desc')))
+      stops.push(onSnapshot(query(base,
+        or(
+          where('department', 'in', NOTE_QUERY_DEPARTMENTS),
+          where('audience', 'in', LEGACY_NOTE_AUDIENCES),
+        ),
+        orderBy('updatedAt', 'desc'),
+      ), snapshot => {
+        sources.set(item.id, snapshot.docs.map(note => ({ id: note.id, itemId: item.id, ...note.data() })))
+        publish()
+        setNotesError('')
+      }, error => {
+        if (error.code !== 'permission-denied') setNotesError('Märkmete laadimine ebaõnnestus.')
+        else setNotesError('Firebase Rules ei luba märkmeid laadida.')
+      }))
     })
     return () => stops.forEach(stop => stop())
   }, [membership, user?.uid, eventId, itemKey, mode, eventDoc?.timeline?.itemId, observedNoteKey])
@@ -487,7 +493,7 @@ function App() {
   }
 
   async function commitTimelineAction(action, targetId = null) {
-    if (!db || !user || !event || !items.length || !online || !beginOperation()) return
+    if (!db || !user || !event || !items.length || !networkOnline || !beginOperation()) return
     const eventRef = doc(db, 'events', eventId)
     const revision = eventId === queueRevisionRef.current.eventId ? queueRevisionRef.current.revision : Number(event.queueRevision) || 0
     const localStarts = getSegmentStarts(items)
@@ -649,6 +655,7 @@ function App() {
     setNoteBusy(true)
     try {
       await deleteDoc(doc(db, 'events', eventId, 'items', item.id, 'notes', note.id))
+      setNotes(current => current.filter(value => value.id !== note.id || value.itemId !== item.id))
       showToast('Märkus kustutatud')
       return true
     } catch (error) {
@@ -658,11 +665,16 @@ function App() {
   }
 
   async function sendMessage(body, important = false) {
-    if (!db || !user || !body.trim() || !online) return false
+    if (!db || !user || !body.trim() || !networkOnline) return false
     try {
-      await addDoc(collection(db, 'events', eventId, 'messages'), {
-        body: body.trim(), audience: 'all', author: member.fullName, authorId: user.uid,
-        ...(important === true ? { important: true } : {}), createdAt: serverTimestamp(),
+      const messageRef = doc(collection(db, 'events', eventId, 'messages'))
+      await runTransaction(db, async transaction => {
+        const eventSnapshot = await transaction.get(doc(db, 'events', eventId))
+        if (!eventSnapshot.exists()) throw new Error('Tööruum ei ole enam saadaval.')
+        transaction.set(messageRef, {
+          body: body.trim(), audience: 'all', author: member.fullName, authorId: user.uid,
+          ...(important === true ? { important: true } : {}), createdAt: serverTimestamp(),
+        })
       })
       return true
     } catch (error) {
@@ -894,8 +906,10 @@ function App() {
   if (membership === 'profile-setup') return <MemberSetupScreen email={user.email} busy={false} error={profileError} onCreate={handleCreateMemberProfile} onSignOut={logout}/>
   if (membership !== 'allowed') return <AccessScreen status={membership} onRetry={() => { setMemberError(''); setMembershipRetry(value => value + 1) }} onSignOut={logout}/>
 
+  if (mode === 'timer') return <CountdownView items={items} timeline={timeline} offline={!networkOnline} onExit={() => setMode('production')}/>
+
   return <AppShell mode={mode} setMode={setMode} member={member} onOpenSettings={() => setMode('settings')}>
-    {!online && <div className="q-banner" role="alert">Internetiühendus katkes. Muudatused jõustuvad pärast ühenduse taastumist; Host käsud on peatatud.</div>}
+    {!networkOnline && <div className="q-offline-alert" role="alert">Internetiühendus katkes. Sõnumite saatmine ja Host’i juhtimine on peatatud.</div>}
     {eventsError && <div className="q-banner" role="alert">{eventsError}</div>}
     {itemsError && <div className="q-banner" role="alert">{itemsError}</div>}
     {notesError && <div className="q-banner" role="alert">{notesError}</div>}
@@ -922,7 +936,8 @@ function App() {
           onSkipForward={() => commitTimelineAction('forward')}
           onTogglePlay={() => commitTimelineAction('toggle')}
           onJumpSelected={() => commitTimelineAction('jump', selectedId)}
-          busy={operationBusy || !online || (mode === 'host' && !hostClockReady)}
+          busy={operationBusy || !networkOnline || (mode === 'host' && !hostClockReady)}
+          networkOnline={networkOnline}
           clockWarning={clockWarning}
         />
       </>

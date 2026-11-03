@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Activity, ArrowLeftRight, CalendarDays, Check, GripVertical,
-  LogOut, Mail, MonitorPlay, Pause, Play, Plus, Save, Send,
+  Activity, ArrowLeftRight, CalendarDays, Check, ChevronDown, GripVertical,
+  LogOut, Mail, Maximize, Minimize, MonitorPlay, Pause, Play, Plus, Save, Send, Timer,
   Flag, Pencil, Settings2, SkipBack, SkipForward, Trash2, X, ZoomIn, ZoomOut,
 } from 'lucide-react'
 import {
@@ -9,7 +9,7 @@ import {
   isValidColor, isValidFullName, isValidQueueDuration, parseDuration, timestampToMillis,
 } from './timeline'
 
-const DEPARTMENT_LABELS = { ALL: 'KÕIK', HELI: 'HELI', VALGUS: 'VALGUS', VIDEO: 'VIDEO' }
+const DEPARTMENT_LABELS = { ALL: 'KÕIK', HELI: 'HELI', VALGUS: 'VALGUS', VIDEO: 'VIDEO', MUU: 'MUU' }
 const DEFAULT_COLORS = ['#7645ff', '#bd5c41', '#e58f98', '#176c68', '#e000d0', '#4a8d22', '#00a8bd', '#357de0']
 const CUE_GAP_PX = 2
 
@@ -45,7 +45,7 @@ export function AuthScreen({ configured, busy, error, notice, onLogin, onReset }
 
 export function AccessScreen({ status, error, onRetry, onSignOut }) {
   const copy = status === 'invalid-name'
-    ? ['Profiili nimi vajab parandamist', 'Firebase’is olev nimi peab olema täpselt kujul „Eesnimi Perekonnanimi“.']
+    ? ['Profiili nimi puudub', 'Lisa Firestore’i liikmeprofiilile nimi. Nimi võib koosneda ühest või mitmest sõnast.']
     : ['Queue ligipääs puudub', 'See e-posti aadress pole Queue liikmete nimekirjas. Ligipääsu haldab projekti omanik Firebase’is.']
   return <main className="q-auth-screen"><section className="q-auth-card"><QueueMark/><p className="q-eyebrow">QUEUE ACCESS</p><h1>{copy[0]}</h1><p>{error || copy[1]}</p><div className="q-auth-actions"><button className="q-button" onClick={onRetry}>Proovi uuesti</button><button className="q-button q-button--quiet" onClick={onSignOut}><LogOut size={15}/>Logi välja</button></div></section></main>
 }
@@ -53,9 +53,9 @@ export function AccessScreen({ status, error, onRetry, onSignOut }) {
 export function MemberSetupScreen({ email, busy, error, onCreate, onSignOut }) {
   const [fullName, setFullName] = useState('')
   const validName = isValidFullName(fullName)
-  return <main className="q-auth-screen"><section className="q-auth-card"><QueueMark/><p className="q-eyebrow">QUEUE PROFILE</p><h1>Lisa oma nimi</h1><p>{email ? `${email} konto on lubatud. ` : ''}Sisesta nimi kujul eesnimi ja perekonnanimi. Queue loob profiili automaatselt.</p>
+  return <main className="q-auth-screen"><section className="q-auth-card"><QueueMark/><p className="q-eyebrow">QUEUE PROFILE</p><h1>Lisa oma nimi</h1><p>{email ? `${email} konto on lubatud. ` : ''}Sisesta nimi, mille järgi tiim sind ära tunneb. Queue loob profiili automaatselt.</p>
     <form className="q-form" onSubmit={event => { event.preventDefault(); if (validName) onCreate(fullName.trim()) }}>
-      <label>Ees- ja perekonnanimi<input autoComplete="name" maxLength={120} value={fullName} onChange={event => setFullName(event.target.value)} placeholder="Sergei Žuravljov" required/></label>
+      <label>Nimi<input autoComplete="name" maxLength={120} value={fullName} onChange={event => setFullName(event.target.value)} placeholder="Sergei Žuravljov" required/></label>
       {error && <p className="q-alert" role="alert">{error}</p>}
       <button className="q-button q-button--primary" disabled={busy || !validName}>{busy ? 'Loon profiili…' : 'Jätka'}</button>
     </form>
@@ -70,10 +70,10 @@ export function AppShell({ mode, setMode, member, onOpenSettings, children }) {
       <header className="q-topbar">
         <nav className="q-mode-nav" aria-label="Töörežiim">
           <ModeButton active={mode === 'production'} onClick={() => setMode('production')} icon={<MonitorPlay size={16}/>} label="Production"/>
-          <ModeButton active={mode === 'host'} onClick={() => setMode('host')} icon={<Activity size={16}/>} label="Host"/>
           <ModeButton active={mode === 'edit'} onClick={() => setMode('edit')} icon={<ArrowLeftRight size={16}/>} label="Edit"/>
+          <ViewModeMenu mode={mode} setMode={setMode}/>
         </nav>
-        <button className={`q-settings-button ${mode === 'settings' ? 'is-active' : ''}`} onClick={onOpenSettings} aria-label="Tööruumid ja konto" title="Tööruumid ja konto"><Settings2 size={17}/><span>Tööruumid</span></button>
+        <div className="q-topbar-actions"><FullscreenButton/><button className={`q-settings-button ${mode === 'settings' ? 'is-active' : ''}`} onClick={onOpenSettings} aria-label="Tööruumid ja konto" title="Tööruumid ja konto"><Settings2 size={17}/><span>Tööruumid</span></button></div>
       </header>
       <div className={`q-content ${mode === 'production' || mode === 'host' ? 'q-content--show' : ''}`}>{children}</div>
     </main>
@@ -84,6 +84,50 @@ function ModeButton({ active, onClick, icon, label }) {
   return <button className={`q-mode-button ${active ? 'is-active' : ''}`} aria-current={active ? 'page' : undefined} onClick={onClick}>{icon}<span>{label}</span></button>
 }
 
+function ViewModeMenu({ mode, setMode }) {
+  const [open, setOpen] = useState(false)
+  const rootRef = useRef(null)
+  useEffect(() => {
+    if (!open) return undefined
+    const closeOutside = event => { if (!rootRef.current?.contains(event.target)) setOpen(false) }
+    const closeOnEscape = event => { if (event.key === 'Escape') setOpen(false) }
+    document.addEventListener('pointerdown', closeOutside)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => { document.removeEventListener('pointerdown', closeOutside); document.removeEventListener('keydown', closeOnEscape) }
+  }, [open])
+  const activeLabel = mode === 'host' ? 'Host' : mode === 'timer' ? 'Ekraanitimer' : 'Vaated'
+  const choose = next => { setMode(next); setOpen(false) }
+  return <div className="q-view-menu" ref={rootRef}>
+    <button className={`q-view-menu-trigger ${mode === 'host' || mode === 'timer' ? 'is-active' : ''}`} type="button" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(value => !value)}>{activeLabel}<ChevronDown size={14}/></button>
+    {open && <div className="q-view-menu-popover" aria-label="Muud vaated">
+      <button type="button" aria-pressed={mode === 'host'} onClick={() => choose('host')}><Activity size={15}/><span>Host</span></button>
+      <button type="button" aria-pressed={mode === 'timer'} onClick={() => choose('timer')}><Timer size={15}/><span>Ekraanitimer</span></button>
+    </div>}
+  </div>
+}
+
+function FullscreenButton() {
+  const [fullscreen, setFullscreen] = useState(false)
+  useEffect(() => {
+    const sync = () => setFullscreen(Boolean(document.fullscreenElement || document.webkitFullscreenElement))
+    document.addEventListener('fullscreenchange', sync)
+    document.addEventListener('webkitfullscreenchange', sync)
+    return () => { document.removeEventListener('fullscreenchange', sync); document.removeEventListener('webkitfullscreenchange', sync) }
+  }, [])
+  const toggle = async () => {
+    try {
+      if (document.fullscreenElement || document.webkitFullscreenElement) {
+        const exit = document.exitFullscreen || document.webkitExitFullscreen
+        await exit?.call(document)
+      } else {
+        const request = document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen
+        await request?.call(document.documentElement)
+      }
+    } catch { /* The browser may not allow fullscreen in this context. */ }
+  }
+  return <button className="q-fullscreen-button" type="button" onClick={toggle} aria-label={fullscreen ? 'Välju täisekraanist' : 'Lülita täisekraan sisse'} title={fullscreen ? 'Välju täisekraanist' : 'Täisekraan'}>{fullscreen ? <Minimize size={17}/> : <Maximize size={17}/>}</button>
+}
+
 function QueueMark() {
   return <div className="q-brand"><span className="q-brand-mark">Q</span><strong>QUEUE</strong></div>
 }
@@ -92,14 +136,14 @@ export function ProductionView({
   mode, event, items, timeline, serverNow, selectedId, onSelect,
   notesByItem, noteFilter, setNoteFilter,
   messages, messagesReady, eventId, currentName, onSendMessage, chatError,
-  onSkipBack, onSkipForward, onTogglePlay, onJumpSelected, busy, clockWarning,
+  onSkipBack, onSkipForward, onTogglePlay, onJumpSelected, busy, clockWarning, networkOnline,
 }) {
   const isHost = mode === 'host'
   const current = items[timeline.currentIndex] || null
   const currentNotes = current && !isSceneChangeItem(current) ? notesByItem[current.id] || [] : []
   const nextShows = timeline.currentIndex >= 0
-    ? items.slice(timeline.currentIndex + 1).filter(item => !isSceneChangeItem(item)).slice(0, 5)
-    : items.filter(item => !isSceneChangeItem(item)).slice(0, 5)
+    ? items.slice(timeline.currentIndex + 1).filter(item => !isSceneChangeItem(item))
+    : items.filter(item => !isSceneChangeItem(item))
   const currentPerformanceNumber = current && !isSceneChangeItem(current)
     ? items.slice(0, timeline.currentIndex + 1).filter(item => !isSceneChangeItem(item)).length
     : null
@@ -143,7 +187,7 @@ export function ProductionView({
           {current ? <>
             <div className="q-stage-number">{currentPerformanceNumber ? String(currentPerformanceNumber).padStart(2, '0') : <ArrowLeftRight size={17}/>}</div>
             <div className="q-stage-copy"><h1>{current.title}</h1>{current.performer && <p>{current.performer}</p>}
-              {currentNotes.map(note => <div className="q-current-note" key={note.id}><b>{DEPARTMENT_LABELS[note.department] || note.department}</b><span>{note.body}</span></div>)}
+              {!!currentNotes.length && <div className="q-current-notes">{currentNotes.map(note => <div className="q-current-note" key={note.id}><b>{DEPARTMENT_LABELS[note.department] || note.department}</b><span>{note.body}</span></div>)}</div>}
             </div>
             {isHost && drift !== null && <div className={`q-drift ${drift.startsWith('−') ? 'is-ahead' : drift.startsWith('+') ? 'is-late' : ''}`} aria-label="Graafikust kõrvalekalle">{drift}</div>}
           </> : <div className="q-stage-copy q-stage-copy--empty"><h1>{items.length ? 'Vali esimene esinemine' : 'Lisa esinemised Edit režiimis'}</h1></div>}
@@ -169,7 +213,7 @@ export function ProductionView({
             <button className="q-queue-select" onClick={() => isHost && onSelect(item.id)} disabled={!isHost} aria-label={`Vali ${item.title}`} aria-pressed={isHost && selectedId === item.id}>
               <span className="q-queue-number">{String(number).padStart(2, '0')}</span>
               <span className="q-queue-main"><strong>{item.title}</strong>{item.performer && <small>{item.performer}</small>}
-                {notes.map(note => <span className="q-note-line" key={note.id}><b>{DEPARTMENT_LABELS[note.department] || DEPARTMENT_LABELS.ALL}</b><span>{note.body}</span></span>)}
+                {!!notes.length && <span className="q-note-stack">{notes.map(note => <span className="q-note-line" key={note.id}><b>{DEPARTMENT_LABELS[note.department] || DEPARTMENT_LABELS.ALL}</b><span>{note.body}</span></span>)}</span>}
               </span>
               <span className="q-queue-time">{formatClock(offsets[index] || 0)}</span>
               <span className="q-queue-duration">{item.duration || '00:00'}</span>
@@ -181,8 +225,28 @@ export function ProductionView({
     </section>
 
     <div className="q-show-splitter" role="separator" aria-label="Muuda vestluse suurust" aria-orientation="horizontal" aria-valuemin={Math.round(splitLimits.min)} aria-valuemax={Math.round(splitLimits.max)} aria-valuenow={Math.round(split)} tabIndex={0} onPointerDown={e => { e.preventDefault(); setResizing(true) }} onKeyDown={e => { if (e.key === 'ArrowUp') setSplit(v => Math.min(splitLimits.max, v + 3)); if (e.key === 'ArrowDown') setSplit(v => Math.max(splitLimits.min, v - 3)) }}><span/></div>
-    <section className="q-chat-pane"><ChatPanel eventId={eventId} messages={messages} messagesReady={messagesReady} currentName={currentName} onSend={onSendMessage} error={chatError}/></section>
+    <section className="q-chat-pane"><ChatPanel eventId={eventId} messages={messages} messagesReady={messagesReady} currentName={currentName} onSend={onSendMessage} error={chatError} networkOnline={networkOnline}/></section>
   </div>
+}
+
+export function CountdownView({ items, timeline, offline, onExit }) {
+  const current = items[timeline.currentIndex] || null
+  const segment = timeline.starts[timeline.currentIndex]
+  const remaining = current && !isSceneChangeItem(current) && segment
+    ? Math.ceil(Math.max(0, segment.end - timeline.positionSeconds))
+    : 0
+  const onExitRef = useRef(onExit)
+  onExitRef.current = onExit
+  useEffect(() => {
+    const handleKey = event => { if (event.key === 'Escape') onExitRef.current() }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [])
+  return <main className="q-countdown-screen">
+    {offline && <div className="q-offline-alert" role="alert">Internetiühendus katkes. Taimer töötab seni kohaliku ajastuse järgi.</div>}
+    <output className="q-countdown-time" role="timer" aria-live="off" aria-label={`Aega esinemise lõpuni ${formatClock(remaining)}`}>{formatClock(remaining)}</output>
+    <div className="q-countdown-controls"><FullscreenButton/><button className="q-fullscreen-button" type="button" onClick={onExit} aria-label="Välju taimerist" title="Välju taimerist"><X size={17}/></button></div>
+  </main>
 }
 
 function CueTimeline({ items, offsets, timeline, selectedId, onSelect, zoom, setZoom, viewportRef }) {
@@ -380,9 +444,10 @@ export function NoteDialog({ item, note, onClose, onSave, busy, error }) {
   </form></Modal>
 }
 
-function ChatPanel({ eventId, messages, messagesReady, currentName, onSend, error }) {
+function ChatPanel({ eventId, messages, messagesReady, currentName, onSend, error, networkOnline }) {
   const [text, setText] = useState('')
   const [important, setImportant] = useState(false)
+  const [sending, setSending] = useState(false)
   const [arrivingIds, setArrivingIds] = useState(() => new Set())
   const knownIds = useRef(new Set())
   const initializedRef = useRef(false)
@@ -412,16 +477,33 @@ function ChatPanel({ eventId, messages, messagesReady, currentName, onSend, erro
     animationTimer.current = window.setTimeout(() => setArrivingIds(new Set()), 260)
   }, [eventId, messages, messagesReady])
   useEffect(() => () => window.clearTimeout(animationTimer.current), [])
+  const submitMessage = async event => {
+    event.preventDefault()
+    const body = text.trim()
+    if (!body || sending || !networkOnline) return
+    const wasImportant = important
+    setText('')
+    setSending(true)
+    try {
+      const sent = await onSend(body, wasImportant)
+      if (sent) setImportant(false)
+      else setText(current => current || body)
+    } catch {
+      setText(current => current || body)
+    } finally {
+      setSending(false)
+    }
+  }
   return <div className="q-chat">{error && <p className="q-chat-error" role="alert">{error}</p>}<div className="q-chat-feed" ref={feedRef} aria-live="polite">
     {messages.map(message => <article key={message.id} className={`q-chat-message ${arrivingIds.has(message.id) ? 'is-new' : ''} ${message.important === true ? 'is-important' : ''}`}>
       <div className="q-chat-meta"><strong>{message.author || currentName || 'Queue'}</strong><time>{formatMessageTime(message.createdAt)}</time>{message.important === true && <span className="q-chat-important-label"><Flag size={12} aria-hidden="true"/>TÄHTIS</span>}</div>
       <p>{message.body}</p>
     </article>)}
     {!messages.length && <div className="q-chat-empty">Vestlust pole veel alustatud.</div>}
-  </div><form className="q-chat-compose" onSubmit={e => { e.preventDefault(); const body = text.trim(); if (!body) return; onSend(body, important).then(sent => { if (sent) { setText(''); setImportant(false) } }) }}>
-    <input value={text} onChange={e => setText(e.target.value)} maxLength={1200} placeholder="Kirjuta sõnum…" aria-label="Sõnum"/>
-    <button className={`q-chat-important-toggle ${important ? 'is-active' : ''}`} type="button" aria-pressed={important} onClick={() => setImportant(value => !value)} title={important ? 'Eemalda tähtsuse märge' : 'Märgi tähtsaks'}><Flag size={15}/><span>Tähtis</span></button>
-    <button className="q-chat-send" aria-label="Saada sõnum" disabled={!text.trim()}><Send size={17}/></button>
+  </div><form className="q-chat-compose" onSubmit={submitMessage}>
+    <input value={text} onChange={e => setText(e.target.value)} maxLength={1200} placeholder={sending ? 'Saadan…' : networkOnline ? 'Kirjuta sõnum…' : 'Ootan internetiühendust…'} aria-label="Sõnum" disabled={!networkOnline || sending}/>
+    <button className={`q-chat-important-toggle ${important ? 'is-active' : ''}`} type="button" aria-pressed={important} disabled={!networkOnline || sending} onClick={() => setImportant(value => !value)} title={important ? 'Eemalda tähtsuse märge' : 'Märgi tähtsaks'}><Flag size={15}/><span>Tähtis</span></button>
+    <button className="q-chat-send" aria-label="Saada sõnum" disabled={!networkOnline || sending || !text.trim()}><Send size={17}/></button>
   </form></div>
 }
 
