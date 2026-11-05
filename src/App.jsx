@@ -10,7 +10,7 @@ import { auth, db, isFirebaseConfigured, isServerClockConfigured, realtimeDb } f
 import {
   DEFAULT_MEMBER_COLOR, NOTE_DEPARTMENTS, deriveTimeline, getSegmentStarts,
   dateTimeInZone, isSceneChangeItem, isValidColor, isValidFullName, isValidQueueDuration, normalizeLegacyDepartment,
-  readTimelineState, timestampToMillis,
+  readTimelineState, sortNotesByDepartment, timestampToMillis,
 } from './timeline'
 import {
   AccessScreen, AppShell, AuthScreen, CountdownView, CreateEventDialog, MemberSetupScreen, NoteDialog,
@@ -32,6 +32,13 @@ function initialMode() {
 
 function initialEventId() {
   try { return localStorage.getItem('queue-event-id') || '' } catch { return '' }
+}
+
+function initialNoteFilter() {
+  try {
+    const saved = localStorage.getItem('queue-note-filter')
+    return NOTE_QUERY_DEPARTMENTS.includes(saved) ? saved : 'ALL'
+  } catch { return 'ALL' }
 }
 
 function orderEvents(values) {
@@ -162,7 +169,7 @@ function App() {
   const [messagesReady, setMessagesReady] = useState(false)
   const [mode, setModeState] = useState(initialMode)
   const [selectedId, setSelectedId] = useState('')
-  const [noteFilter, setNoteFilter] = useState('ALL')
+  const [noteFilter, setNoteFilterState] = useState(initialNoteFilter)
   const [noteItem, setNoteItem] = useState(null)
   const [showCreateEvent, setShowCreateEvent] = useState(false)
   const [eventDialogError, setEventDialogError] = useState('')
@@ -201,6 +208,11 @@ function App() {
   const setMode = useCallback(next => {
     setModeState(next)
     try { localStorage.setItem('queue-mode', next) } catch { /* Storage is optional. */ }
+  }, [])
+
+  const setNoteFilter = useCallback(next => {
+    setNoteFilterState(next)
+    try { localStorage.setItem('queue-note-filter', next) } catch { /* Storage is optional. */ }
   }, [])
 
   const showToast = useCallback(message => {
@@ -539,7 +551,7 @@ function App() {
       if (!output[note.itemId]) output[note.itemId] = []
       output[note.itemId].push({ ...note, department })
     }
-    for (const value of Object.values(output)) value.sort((a, b) => (timestampToMillis(b.updatedAt) || 0) - (timestampToMillis(a.updatedAt) || 0))
+    for (const itemId of Object.keys(output)) output[itemId] = sortNotesByDepartment(output[itemId])
     return output
   }, [notes, noteFilter])
   const allNotesByItem = useMemo(() => {
@@ -550,7 +562,7 @@ function App() {
       if (!output[note.itemId]) output[note.itemId] = []
       output[note.itemId].push({ ...note, department })
     }
-    for (const value of Object.values(output)) value.sort((a, b) => (timestampToMillis(b.updatedAt) || 0) - (timestampToMillis(a.updatedAt) || 0))
+    for (const itemId of Object.keys(output)) output[itemId] = sortNotesByDepartment(output[itemId])
     return output
   }, [notes])
 
@@ -598,9 +610,19 @@ function App() {
         const firstPerformance = firstPerformanceIndex >= 0 ? items[firstPerformanceIndex] : items[0]
         const firstPosition = firstPerformanceIndex >= 0 ? starts[firstPerformanceIndex].start * 1000 : 0
 
-        if (action === 'toggle') {
+        if (action === 'auto') {
+          const keepPlaying = state.effectiveStatus === 'playing'
+          next = {
+            ...next,
+            autoContinue: !state.autoContinue,
+            status: state.effectiveStatus,
+            itemId: state.itemId,
+            positionMs: state.positionMs,
+            anchorAt: keepPlaying ? commitAt : null,
+          }
+        } else if (action === 'toggle') {
           if (state.effectiveStatus === 'playing' && state.status === 'playing') {
-            next = { ...next, status: 'paused', positionMs: state.positionMs, anchorAt: null }
+            next = { ...next, status: 'paused', itemId: state.itemId, positionMs: state.positionMs, anchorAt: null }
           } else if (state.currentIndex >= 0 && state.positionSeconds >= state.segmentEndSeconds - 0.05) {
             const nextIndex = state.currentIndex + 1
             if (nextIndex < items.length) {
@@ -688,7 +710,7 @@ function App() {
         start,
         startAt: Timestamp.fromDate(startAtDate),
         queueRevision: 0,
-        timeline: { status: 'scheduled', itemId: null, positionMs: 0, anchorAt: null, firstStartedAt: null, commandRevision: 0, updatedAt: serverTimestamp(), updatedBy: user.uid },
+        timeline: { status: 'scheduled', itemId: null, positionMs: 0, anchorAt: null, firstStartedAt: null, autoContinue: false, commandRevision: 0, updatedAt: serverTimestamp(), updatedBy: user.uid },
         createdAt: serverTimestamp(),
         createdBy: user.uid,
         updatedAt: serverTimestamp(),
@@ -1036,6 +1058,7 @@ function App() {
           onSkipBack={() => commitTimelineAction('back')}
           onSkipForward={() => commitTimelineAction('forward')}
           onTogglePlay={() => commitTimelineAction('toggle')}
+          onToggleAutoContinue={() => commitTimelineAction('auto')}
           onJumpSelected={() => commitTimelineAction('jump', selectedId)}
           busy={operationBusy || !networkOnline || (mode === 'host' && !hostClockReady)}
           networkOnline={networkOnline}

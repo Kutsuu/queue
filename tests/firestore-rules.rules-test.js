@@ -136,6 +136,15 @@ test('Firestore Rules enforce member allow-list, scoped notes, queue validation,
     updatedAt: serverTimestamp(), updatedBy: member.user.uid,
   })
   assert.equal((await getDoc(eventRef)).data().timeline.status, 'paused', 'member should write a valid timeline command')
+  await updateDoc(eventRef, {
+    timeline: { status: 'playing', itemId, positionMs: 0, anchorAt: serverTimestamp(), firstStartedAt: null, autoContinue: true, commandRevision: 2, updatedAt: serverTimestamp(), updatedBy: member.user.uid },
+    updatedAt: serverTimestamp(), updatedBy: member.user.uid,
+  })
+  assert.equal((await getDoc(eventRef)).data().timeline.autoContinue, true, 'member should be able to set synchronized automatic continuation')
+  await assert.rejects(updateDoc(eventRef, {
+    timeline: { status: 'paused', itemId, positionMs: 0, anchorAt: null, firstStartedAt: null, autoContinue: 'yes', commandRevision: 3, updatedAt: serverTimestamp(), updatedBy: member.user.uid },
+    updatedAt: serverTimestamp(), updatedBy: member.user.uid,
+  }), error => error.code === 'permission-denied')
 
   await signOut(member.auth)
   await assert.rejects(getDoc(eventRef), error => error.code === 'permission-denied')

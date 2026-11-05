@@ -116,6 +116,7 @@ export function readTimelineState(event, items = []) {
       positionMs: Math.max(0, Number(saved.positionMs) || 0),
       anchorAt: saved.anchorAt || null,
       firstStartedAt: saved.firstStartedAt || null,
+      autoContinue: saved.autoContinue === true,
       commandRevision: Math.max(0, Number(saved.commandRevision) || 0),
       updatedBy: saved.updatedBy || null,
     }
@@ -134,6 +135,7 @@ export function readTimelineState(event, items = []) {
     positionMs: Math.round((Number.isFinite(Number(event?.timelinePositionSeconds)) ? Number(event.timelinePositionSeconds) : legacyOffset + cueElapsed) * 1000),
     anchorAt: status === 'playing' ? legacyAnchor : null,
     firstStartedAt: status === 'playing' ? legacyAnchor : null,
+    autoContinue: false,
     commandRevision: 0,
     updatedBy: event?.updatedBy || null,
   }
@@ -141,26 +143,36 @@ export function readTimelineState(event, items = []) {
 
 export function deriveTimeline(event, items = [], nowMs = Date.now()) {
   const state = readTimelineState(event, items)
-  const index = items.findIndex(item => item.id === state.itemId)
+  const savedIndex = items.findIndex(item => item.id === state.itemId)
   const starts = getSegmentStarts(items)
-  const start = index >= 0 ? starts[index].start : 0
-  const end = index >= 0 ? starts[index].end : 0
   const anchorMs = timestampToMillis(state.anchorAt)
   const elapsedMs = state.status === 'playing' && anchorMs !== null ? Math.max(0, nowMs - anchorMs) : 0
   let positionMs = state.positionMs + elapsedMs
   let status = state.status
+  let index = savedIndex
 
-  if (status === 'playing' && index >= 0 && starts[index].duration > 0 && positionMs >= end * 1000) {
-    positionMs = end * 1000
+  if (state.autoContinue && savedIndex >= 0) {
+    const finalEndMs = (starts.at(-1)?.end || 0) * 1000
+    index = starts.findIndex(segment => positionMs < segment.end * 1000)
+    if (index < 0 && starts.length) {
+      index = starts.length - 1
+      positionMs = finalEndMs
+      if (status === 'playing') status = 'paused'
+    }
+  } else if (status === 'playing' && index >= 0 && starts[index].duration > 0 && positionMs >= starts[index].end * 1000) {
+    positionMs = starts[index].end * 1000
+    status = 'paused'
+  } else if (status === 'playing' && index >= 0 && starts[index].duration === 0) {
+    positionMs = starts[index].start * 1000
     status = 'paused'
   }
-  if (status === 'playing' && index >= 0 && starts[index].duration === 0) {
-    positionMs = start * 1000
-    status = 'paused'
-  }
+
+  const start = index >= 0 ? starts[index].start : 0
+  const end = index >= 0 ? starts[index].end : 0
 
   return {
     ...state,
+    itemId: index >= 0 ? items[index].id : state.itemId,
     currentIndex: index,
     effectiveStatus: status,
     positionMs: Math.max(0, Math.floor(positionMs)),
@@ -188,6 +200,14 @@ export function normalizeLegacyDepartment(note) {
   if (note?.audience === 'video') return 'VIDEO'
   if (note?.audience === 'all') return 'ALL'
   return null
+}
+
+export function sortNotesByDepartment(notes = []) {
+  const priority = { HELI: 0, VALGUS: 1, VIDEO: 2, MUU: 3, ALL: 4 }
+  return [...notes].sort((a, b) =>
+    (priority[a.department] ?? 99) - (priority[b.department] ?? 99)
+    || (timestampToMillis(b.updatedAt) || 0) - (timestampToMillis(a.updatedAt) || 0),
+  )
 }
 
 export function isValidFullName(value) {

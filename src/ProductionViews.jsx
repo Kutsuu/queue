@@ -1,8 +1,8 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Activity, ArrowLeftRight, CalendarDays, Check, ChevronDown, Clock3, GripVertical,
-  LogOut, Mail, MapPin, Maximize, Minimize, MonitorPlay, Pause, Play, Plus, Save, Send, Timer,
-  Flag, Pencil, Settings2, SkipBack, SkipForward, Trash2, X, ZoomIn, ZoomOut,
+  LogOut, Mail, MapPin, Maximize, Minimize, MonitorPlay, Pause, Play, Plus, Save, Search, Send, Timer,
+  Crosshair, Flag, Pencil, Settings2, SkipBack, SkipForward, Trash2, X, ZoomIn, ZoomOut,
 } from 'lucide-react'
 import {
   DEFAULT_MEMBER_COLOR, EVENT_TIME_ZONE, NOTE_DEPARTMENTS, calculateDrift, currentDateInZone, dateTimeInZone, formatClock, formatSignedOffset, getCueWidths, getPerformanceNumbers, isSceneChangeItem,
@@ -12,6 +12,26 @@ import {
 const DEPARTMENT_LABELS = { ALL: 'KÕIK', HELI: 'HELI', VALGUS: 'VALGUS', VIDEO: 'VIDEO', MUU: 'MUU' }
 const DEFAULT_COLORS = ['#7645ff', '#bd5c41', '#e58f98', '#176c68', '#e000d0', '#4a8d22', '#00a8bd', '#357de0']
 const CUE_GAP_PX = 2
+
+function readStoredNumber(key, fallback, min, max) {
+  try {
+    const value = Number(localStorage.getItem(key))
+    return Number.isFinite(value) && value >= min && value <= max ? value : fallback
+  } catch { return fallback }
+}
+
+function matchesPerformance(item, search) {
+  const needle = search.trim().toLocaleLowerCase('et')
+  return !needle || `${item.title || ''} ${item.performer || ''}`.toLocaleLowerCase('et').includes(needle)
+}
+
+function SearchControl({ value, onChange, open, setOpen, placeholder = 'Otsi esinemist' }) {
+  const inputRef = useRef(null)
+  useEffect(() => { if (open) inputRef.current?.focus() }, [open])
+  const close = () => { onChange(''); setOpen(false) }
+  return open ? <div className="q-search-field" role="search"><Search size={15} aria-hidden="true"/><input ref={inputRef} type="search" value={value} onChange={event => onChange(event.target.value)} onKeyDown={event => { if (event.key === 'Escape') close() }} placeholder={placeholder} aria-label={placeholder}/><button type="button" onClick={close} aria-label="Sulge otsing"><X size={15}/></button></div>
+    : <button className="q-search-trigger" type="button" onClick={() => setOpen(true)} aria-label="Otsi esinemist" title="Otsi esinemist"><Search size={16}/></button>
+}
 
 export function AuthScreen({ configured, busy, error, notice, onLogin, onReset }) {
   const [email, setEmail] = useState('')
@@ -73,7 +93,7 @@ export function AppShell({ mode, setMode, onOpenSettings, children }) {
         </nav>
         <div className="q-topbar-actions"><FullscreenButton/><button className={`q-settings-button ${mode === 'settings' ? 'is-active' : ''}`} onClick={onOpenSettings} aria-label="Sätted" title="Sätted"><Settings2 size={17}/><span>Sätted</span></button></div>
       </header>
-      <div className={`q-content ${mode === 'production' || mode === 'host' ? 'q-content--show' : ''}`}>{children}</div>
+      <div className={`q-content ${mode === 'production' || mode === 'host' ? 'q-content--show' : ''} ${mode === 'edit' ? 'q-content--edit' : ''}`}>{children}</div>
     </main>
   </div>
 }
@@ -154,7 +174,7 @@ export function ProductionView({
   mode, event, items, timeline, serverNow, selectedId, onSelect,
   notesByItem, noteFilter, setNoteFilter,
   messages, messagesReady, directoryMembers, eventId, currentName, onSendMessage, chatError,
-  onSkipBack, onSkipForward, onTogglePlay, onJumpSelected, busy, clockWarning, networkOnline,
+  onSkipBack, onSkipForward, onTogglePlay, onToggleAutoContinue, onJumpSelected, busy, clockWarning, networkOnline,
 }) {
   const isHost = mode === 'host'
   const current = items[timeline.currentIndex] || null
@@ -169,12 +189,33 @@ export function ProductionView({
     : null
   const driftValue = calculateDrift(event, timeline, serverNow)
   const drift = driftValue === null ? null : formatSignedOffset(driftValue)
-  const [split, setSplit] = useState(66)
+  const [split, setSplitState] = useState(() => readStoredNumber('queue-chat-split', 66, 35, 85))
   const [resizing, setResizing] = useState(false)
   const workspaceRef = useRef(null)
   const scrollRef = useRef(null)
-  const [zoom, setZoom] = useState(1)
+  const [zoom, setZoomState] = useState(() => readStoredNumber('queue-timeline-zoom', 1, .55, 6))
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
   const splitLimits = getSplitLimits(workspaceRef.current?.clientHeight || window.innerHeight)
+  const setSplit = value => {
+    const next = typeof value === 'function' ? value(split) : value
+    setSplitState(next)
+    try { localStorage.setItem('queue-chat-split', String(next)) } catch { /* Storage is optional. */ }
+  }
+  const setZoom = value => {
+    const next = typeof value === 'function' ? value(zoom) : value
+    setZoomState(next)
+    try { localStorage.setItem('queue-timeline-zoom', String(next)) } catch { /* Storage is optional. */ }
+  }
+  const visibleShows = searchQuery.trim()
+    ? items.filter(item => !isSceneChangeItem(item) && matchesPerformance(item, searchQuery))
+    : nextShows
+
+  useEffect(() => {
+    const limits = getSplitLimits(workspaceRef.current?.clientHeight || window.innerHeight)
+    const clamped = Math.max(limits.min, Math.min(limits.max, split))
+    if (clamped !== split) setSplit(clamped)
+  }, [])
 
   useEffect(() => {
     if (!resizing) return
@@ -214,22 +255,25 @@ export function ProductionView({
         </div>
         {clockWarning && isHost && <div className="q-clock-warning" role="status" title={clockWarning}>Kella sünkroonimine vajab seadistamist</div>}
         {isHost && <div className="q-host-controls">
-          <button className="q-transport" title="Eelmine segment" aria-label="Eelmine segment" disabled={!items.length || busy} onClick={onSkipBack}><SkipBack size={18}/></button>
-          <button className="q-play-button" title={timeline.effectiveStatus === 'playing' ? 'Paus' : 'Esita'} aria-label={timeline.effectiveStatus === 'playing' ? 'Paus' : 'Esita'} disabled={!items.length || busy} onClick={onTogglePlay}>{timeline.effectiveStatus === 'playing' ? <Pause size={19} fill="currentColor"/> : <Play size={19} fill="currentColor"/>}</button>
-          <button className="q-transport" title="Järgmine segment" aria-label="Järgmine segment" disabled={!items.length || busy} onClick={onSkipForward}><SkipForward size={18}/></button>
-          <button className="q-jump-button" disabled={!selectedId || !items.some(item => item.id === selectedId) || selectedId === timeline.itemId || busy} onClick={onJumpSelected}>Mine valitud cue juurde</button>
+          <button className="q-transport" title="Eelmine segment" aria-label="Eelmine segment" disabled={!items.length || busy} onClick={onSkipBack}><SkipBack size={23}/></button>
+          <button className="q-play-button" title={timeline.effectiveStatus === 'playing' ? 'Paus' : 'Esita'} aria-label={timeline.effectiveStatus === 'playing' ? 'Paus' : 'Esita'} disabled={!items.length || busy} onClick={onTogglePlay}>{timeline.effectiveStatus === 'playing' ? <Pause size={24} fill="currentColor"/> : <Play size={24} fill="currentColor"/>}</button>
+          <button className="q-transport" title="Järgmine segment" aria-label="Järgmine segment" disabled={!items.length || busy} onClick={onSkipForward}><SkipForward size={23}/></button>
+          <button className={`q-auto-continue ${timeline.autoContinue ? 'is-active' : ''}`} type="button" title={timeline.autoContinue ? 'Peatu iga segmendi lõpus' : 'Jätka automaatselt järgmise segmendiga'} aria-label={timeline.autoContinue ? 'Automaatne jätkamine sees' : 'Automaatne jätkamine väljas'} aria-pressed={timeline.autoContinue === true} disabled={!items.length || busy} onClick={onToggleAutoContinue}><span>{timeline.autoContinue && <Check size={15}/>}</span></button>
+          <button className="q-jump-button" type="button" title="Mine valitud cue juurde" aria-label="Mine valitud cue juurde" disabled={!selectedId || !items.some(item => item.id === selectedId) || selectedId === timeline.itemId || busy} onClick={onJumpSelected}><Crosshair size={21}/></button>
         </div>}
       </div>
 
       <CueTimeline items={items} offsets={offsets} timeline={timeline} selectedId={selectedId} onSelect={isHost ? onSelect : undefined} zoom={zoom} setZoom={setZoom} viewportRef={scrollRef}/>
 
       <section className="q-up-next" aria-label="Järgmised esinemised">
-        <nav className="q-note-filters" aria-label="Märkmete filter">{NOTE_DEPARTMENTS.map(department => <button key={department} className={noteFilter === department ? 'is-active' : ''} aria-pressed={noteFilter === department} onClick={() => setNoteFilter(department)}>{DEPARTMENT_LABELS[department] || department}</button>)}</nav>
-        <div className="q-upcoming-list">{nextShows.map(item => {
+        <nav className="q-note-filters" aria-label="Märkmete filter">{NOTE_DEPARTMENTS.map(department => <button key={department} className={noteFilter === department ? 'is-active' : ''} aria-pressed={noteFilter === department} onClick={() => setNoteFilter(department)}>{DEPARTMENT_LABELS[department] || department}</button>)}<SearchControl value={searchQuery} onChange={setSearchQuery} open={searchOpen} setOpen={setSearchOpen}/></nav>
+        <div className="q-upcoming-list">{visibleShows.map(item => {
           const index = items.findIndex(row => row.id === item.id)
           const number = items.slice(0, index + 1).filter(row => !isSceneChangeItem(row)).length
           const notes = (notesByItem[item.id] || []).filter(note => noteFilter === 'ALL' || note.department === 'ALL' || note.department === noteFilter)
-          return <article key={item.id} className={`q-queue-row ${isHost && selectedId === item.id ? 'is-selected' : ''}`} style={{ '--cue-color': item.color || DEFAULT_COLORS[index % DEFAULT_COLORS.length] }}>
+          const isCurrent = index === timeline.currentIndex
+          const isPast = timeline.currentIndex >= 0 && index < timeline.currentIndex
+          return <article key={item.id} className={`q-queue-row ${isHost && selectedId === item.id ? 'is-selected' : ''} ${isCurrent ? 'is-current' : ''} ${isPast ? 'is-past' : ''}`} style={{ '--cue-color': item.color || DEFAULT_COLORS[index % DEFAULT_COLORS.length] }}>
             <button className="q-queue-select" onClick={() => isHost && onSelect(item.id)} disabled={!isHost} aria-label={`Vali ${item.title}`} aria-pressed={isHost && selectedId === item.id}>
               <span className="q-queue-number">{String(number).padStart(2, '0')}</span>
               <span className="q-queue-main"><strong>{item.title}</strong>{item.performer && <small>{item.performer}</small>}
@@ -240,7 +284,7 @@ export function ProductionView({
             </button>
           </article>
         })}
-        {!nextShows.length && <div className="q-queue-empty">{items.length ? 'Järgmisi esinemisi pole.' : 'Järjekord on tühi.'}</div>}</div>
+        {!visibleShows.length && <div className="q-queue-empty">{searchQuery.trim() ? 'Otsingule vastavaid esinemisi ei leitud.' : items.length ? 'Järgmisi esinemisi pole.' : 'Järjekord on tühi.'}</div>}</div>
       </section>
     </section>
 
@@ -266,7 +310,7 @@ export function CountdownView({ items, timeline, offline, onExit }) {
   }, [])
   return <main className="q-countdown-screen">
     {offline && <div className="q-offline-alert" role="alert">Internetiühendus katkes. Taimer töötab seni kohaliku ajastuse järgi.</div>}
-    <output className={`q-countdown-time ${timerClass}`} role="timer" aria-live="off" aria-label={`Aega esinemise lõpuni ${displayTime}`}>{displayTime}</output>
+    <output className={`q-countdown-time ${timerClass} ${current && isSceneChangeItem(current) ? 'is-transition' : ''}`} role="timer" aria-live="off" aria-label={current && isSceneChangeItem(current) ? 'Lava vahetus' : `Aega esinemise lõpuni ${displayTime}`}>{displayTime}</output>
     <div className="q-countdown-controls"><FullscreenButton/><button className="q-fullscreen-button" type="button" onClick={onExit} aria-label="Välju taimerist" title="Välju taimerist"><X size={17}/></button></div>
   </main>
 }
@@ -326,12 +370,11 @@ function CueTimeline({ items, offsets, timeline, selectedId, onSelect, zoom, set
       : contentWidth + Math.max(0, seconds - totalSeconds) * scale
     minuteTicks.push({ minute, tickX, major: minute % labelInterval === 0 })
   }
-  const rulerWidth = Math.max(contentWidth, minuteTicks[minuteTicks.length - 1]?.tickX || 0)
   return <section className="q-cue-timeline" aria-label="Ajatelg">
     <div className="q-timeline-tools"><button title="Vähenda suumi" aria-label="Vähenda suumi" onClick={() => setZoom(value => Math.max(.55, Number((value - .25).toFixed(2))))}><ZoomOut size={15}/></button><button title="Suurenda suumi" aria-label="Suurenda suumi" onClick={() => setZoom(value => Math.min(6, Number((value + .25).toFixed(2))))}><ZoomIn size={15}/></button></div>
     <div className="q-cue-viewport" ref={viewportRef}>
-      <div className="q-time-ruler" aria-hidden="true" style={{ width: rulerWidth, transform: `translateX(${translate}px)` }}>
-        {minuteTicks.map(({ minute, tickX, major }) => <span key={minute} className={`q-time-tick ${major ? 'is-major' : ''}`} style={{ left: tickX }}>
+      <div className="q-time-ruler" aria-hidden="true">
+        {minuteTicks.map(({ minute, tickX, major }) => <span key={minute} className={`q-time-tick ${major ? 'is-major' : ''}`} style={{ left: tickX + translate }}>
           {major && <span>{formatMinuteMark(minute)}</span>}
         </span>)}
       </div>
@@ -350,6 +393,8 @@ function formatMinuteMark(minute) {
 
 export function QueueEditor({ event, items, queueRevision, notesByItem = {}, noteBusy, onAddNote, onEditNote, onDeleteNote, onSaveItem, onDeleteItem, onMoveItem, onAddItem, onSaveEvent }) {
   const [drafts, setDrafts] = useState({})
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
   const [adding, setAdding] = useState(false)
   const [newDraft, setNewDraft] = useState({ title: '', performer: '', duration: '03:00', color: DEFAULT_COLORS[0] })
   const [drag, setDrag] = useState(null)
@@ -397,6 +442,12 @@ export function QueueEditor({ event, items, queueRevision, notesByItem = {}, not
   const schedule = useMemo(() => getSegmentSchedule(items, drafts), [items, drafts])
   const actNumbers = getPerformanceNumbers(items)
   const firstPerformanceIndex = items.findIndex(item => !isSceneChangeItem(item))
+  const visibleItems = items.map((item, index) => ({ item, index })).filter(({ item, index }) => {
+    const needle = searchQuery.trim()
+    if (!needle) return true
+    if (!isSceneChangeItem(item)) return matchesPerformance(item, needle)
+    return [items[index - 1], items[index + 1]].some(neighbor => neighbor && !isSceneChangeItem(neighbor) && matchesPerformance(neighbor, needle))
+  })
   const isDirty = (item, draft, index) => {
     const color = isValidColor(item.color) ? item.color : DEFAULT_COLORS[index % DEFAULT_COLORS.length]
     const newColor = isValidColor(draft.color) ? draft.color : color
@@ -425,9 +476,9 @@ export function QueueEditor({ event, items, queueRevision, notesByItem = {}, not
 
   return <section className="q-editor-page">
     <EventSettingsEditor event={event} onSave={onSaveEvent}/>
-    <div className="q-editor-toolbar"><button className="q-button q-button--primary" disabled={!event || busy || items.length >= 400} onClick={() => setAdding(true)}><Plus size={15}/>Lisa esinemine</button><span>{items.filter(item => !isSceneChangeItem(item)).length} esinemist</span></div>
+    <div className={`q-editor-toolbar ${searchQuery.trim() ? 'is-searching' : ''}`}><button className="q-button q-button--primary" disabled={!event || busy || items.length >= 400} onClick={() => setAdding(true)}><Plus size={15}/>Lisa esinemine</button><span>{searchQuery.trim() ? `${visibleItems.filter(({ item }) => !isSceneChangeItem(item)).length} / ` : ''}{items.filter(item => !isSceneChangeItem(item)).length} esinemist</span><SearchControl value={searchQuery} onChange={setSearchQuery} open={searchOpen} setOpen={setSearchOpen} placeholder="Otsi esinejat või pealkirja"/></div>
     {!event ? <div className="q-empty">Vali või loo tööruum seadete lehel.</div> : <div className="q-editor-table-wrap"><table className="q-editor-table"><thead><tr><th>#</th><th>Esinemine</th><th>Laval</th><th>Algus</th><th>Lõpp</th><th>Kestus</th><th>Värv</th><th/></tr></thead><tbody>
-      {items.map((item, index) => {
+      {visibleItems.map(({ item, index }) => {
         const row = draftFor(item)
         const transition = isSceneChangeItem(item)
         const number = actNumbers[index]
@@ -443,7 +494,7 @@ export function QueueEditor({ event, items, queueRevision, notesByItem = {}, not
         }
         return <Fragment key={item.id}>
           <tr ref={node => node ? rowElements.current.set(item.id, node) : rowElements.current.delete(item.id)} className={`q-editor-row ${transition ? 'is-transition' : ''} ${drag?.id === item.id ? 'is-dragging' : ''} ${drag?.targetId === item.id ? 'is-drop-target' : ''}`}>
-            <td className="q-row-index">{transition ? <ArrowLeftRight size={15}/> : <><span>{String(number).padStart(2, '0')}</span><button className="q-drag-handle" type="button" disabled={busy} aria-label={`Lohista ${item.title}; kasuta nooli järjekorra muutmiseks`} onPointerDown={e => beginDrag(e, item)} onKeyDown={e => { if (e.key === 'ArrowUp' || e.key === 'ArrowDown') { e.preventDefault(); moveByKeyboard(e.key === 'ArrowUp' ? -1 : 1) } }}><GripVertical size={17}/></button></>}</td>
+            <td className="q-row-index">{transition ? <ArrowLeftRight size={15}/> : <><span>{String(number).padStart(2, '0')}</span><button className="q-drag-handle" type="button" disabled={busy || Boolean(searchQuery.trim())} aria-label={`Lohista ${item.title}; kasuta nooli järjekorra muutmiseks`} onPointerDown={e => beginDrag(e, item)} onKeyDown={e => { if (e.key === 'ArrowUp' || e.key === 'ArrowDown') { e.preventDefault(); moveByKeyboard(e.key === 'ArrowUp' ? -1 : 1) } }}><GripVertical size={17}/></button></>}</td>
             <td data-label="Esinemine">{transition ? <strong className="q-transition-title">Lava vahetus</strong> : <input aria-label="Esinemise pealkiri" value={row.title || ''} onChange={e => updateDraft(item, 'title', e.target.value)} maxLength={120}/>}</td>
             <td data-label="Laval">{transition ? <span className="q-muted">—</span> : <input aria-label="Kes laval" value={row.performer || ''} onChange={e => updateDraft(item, 'performer', e.target.value)} maxLength={120}/>}</td>
             <td data-label="Algus"><time>{formatScheduledTime(eventStart, schedule[index]?.start ?? 0)}</time></td>
@@ -466,7 +517,7 @@ export function QueueEditor({ event, items, queueRevision, notesByItem = {}, not
         </Fragment>
       })}
       {adding && <tr className="q-new-row"><td>+</td><td data-label="Esinemine"><input aria-label="Esinemise pealkiri" placeholder="Pealkiri" value={newDraft.title} onChange={e => setNewDraft(current => ({ ...current, title: e.target.value }))}/></td><td data-label="Laval"><input aria-label="Kes laval" placeholder="Nimi või rühm" value={newDraft.performer} onChange={e => setNewDraft(current => ({ ...current, performer: e.target.value }))}/></td><td data-label="Algus">—</td><td data-label="Lõpp">—</td><td data-label="Kestus"><input aria-label="Kestus" inputMode="numeric" className={!isValidQueueDuration(newDraft.duration) ? 'is-invalid' : ''} value={newDraft.duration} onChange={e => setNewDraft(current => ({ ...current, duration: e.target.value }))}/></td><td data-label="Värv"><input className="q-color-input" type="color" aria-label="Värv" value={newDraft.color} onChange={e => setNewDraft(current => ({ ...current, color: e.target.value }))}/></td><td className="q-row-actions"><button className="q-icon-button" title="Lisa" disabled={!newDraft.title.trim() || !isValidQueueDuration(newDraft.duration) || busy || items.length >= 400} onClick={async () => { if (await onAddItem({ ...newDraft, type: 'performance' })) { setNewDraft({ title: '', performer: '', duration: '03:00', color: DEFAULT_COLORS[(items.length + 1) % DEFAULT_COLORS.length] }); setAdding(false) } }}><Check size={15}/></button><button className="q-icon-button" title="Tühista" onClick={() => setAdding(false)}><X size={15}/></button></td></tr>}
-    </tbody></table>{!items.length && !adding && <div className="q-empty">Järjekord on tühi. Lisa esimene esinemine.</div>}</div>}
+    </tbody></table>{!items.length && !adding && <div className="q-empty">Järjekord on tühi. Lisa esimene esinemine.</div>}{items.length > 0 && !visibleItems.length && !adding && <div className="q-empty">Otsingule vastavaid esinemisi ei leitud.</div>}</div>}
   </section>
 }
 

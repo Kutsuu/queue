@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
   calculateDrift, dateTimeInZone, deriveTimeline, formatClock, getCueWidths, getPerformanceNumbers,
   getSegmentStarts, isValidQueueDuration, parseDuration,
+  sortNotesByDepartment,
 } from '../src/timeline.js'
 
 const timestamp = milliseconds => ({ toMillis: () => milliseconds })
@@ -43,6 +44,39 @@ test('playing timeline advances from its anchor and clamps at the cue end', () =
   assert.equal(endedCue.effectiveStatus, 'paused')
 })
 
+test('auto-continue carries elapsed time across performances and scene changes', () => {
+  const event = { timeline: { status: 'playing', itemId: 'a', positionMs: 0, anchorAt: timestamp(0), autoContinue: true, commandRevision: 1 } }
+  const items = [
+    { id: 'a', duration: '03:00' },
+    { id: 'swap', type: 'scene-change', duration: '01:00' },
+    { id: 'b', duration: '02:30' },
+  ]
+
+  const duringTransition = deriveTimeline(event, items, 200_000)
+  assert.equal(duringTransition.itemId, 'swap')
+  assert.equal(duringTransition.currentIndex, 1)
+  assert.equal(duringTransition.positionMs, 200_000)
+  assert.equal(duringTransition.effectiveStatus, 'playing')
+
+  const duringNextPerformance = deriveTimeline(event, items, 250_000)
+  assert.equal(duringNextPerformance.itemId, 'b')
+  assert.equal(duringNextPerformance.cueElapsedSeconds, 10)
+  assert.equal(duringNextPerformance.effectiveStatus, 'playing')
+})
+
+test('auto-continue pauses at the end of the full queue and paused state remains stable', () => {
+  const items = [{ id: 'a', duration: '01:00' }, { id: 'b', duration: '02:00' }]
+  const playing = { timeline: { status: 'playing', itemId: 'a', positionMs: 0, anchorAt: timestamp(0), autoContinue: true, commandRevision: 1 } }
+  const ended = deriveTimeline(playing, items, 190_000)
+  assert.equal(ended.currentIndex, 1)
+  assert.equal(ended.positionMs, 180_000)
+  assert.equal(ended.effectiveStatus, 'paused')
+
+  const paused = deriveTimeline({ timeline: { ...playing.timeline, status: 'paused', itemId: 'b', positionMs: 90_000, anchorAt: null } }, items, 900_000)
+  assert.equal(paused.positionMs, 90_000)
+  assert.equal(paused.itemId, 'b')
+})
+
 test('host schedule drift keeps moving with wall time while the timeline is paused', () => {
   const startAtMs = Date.UTC(2026, 10, 1, 16)
   const event = { startAt: timestamp(startAtMs) }
@@ -67,4 +101,9 @@ test('timeline cue widths stay proportional and performance numbering skips scen
   const widths = getCueWidths(items, 1)
   assert.equal(widths[2] / widths[0], 10)
   assert.deepEqual(getPerformanceNumbers(items), [1, null, 2])
+})
+
+test('showing all notes keeps the requested department order', () => {
+  const notes = ['ALL', 'MUU', 'VIDEO', 'HELI', 'VALGUS'].map(department => ({ department }))
+  assert.deepEqual(sortNotesByDepartment(notes).map(note => note.department), ['HELI', 'VALGUS', 'VIDEO', 'MUU', 'ALL'])
 })
