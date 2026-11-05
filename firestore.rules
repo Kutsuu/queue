@@ -113,6 +113,21 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    match /bugReports/{reportId} {
+      allow create: if isMember()
+        && request.resource.data.keys().hasOnly(['body', 'authorId', 'author', 'eventId', 'createdAt'])
+        && request.resource.data.keys().hasAll(['body', 'authorId', 'author', 'eventId', 'createdAt'])
+        && request.resource.data.body is string
+        && request.resource.data.body.size() > 0
+        && request.resource.data.body.size() <= 2000
+        && request.resource.data.authorId == request.auth.uid
+        && request.resource.data.author == get(memberPath(request.auth.uid)).data.fullName
+        && request.resource.data.eventId is string
+        && request.resource.data.eventId.size() <= 100
+        && request.resource.data.createdAt == request.time;
+      allow read, update, delete: if false;
+    }
+
     match /events/{eventId} {
       allow get, list: if isMember();
       allow create: if isMember()

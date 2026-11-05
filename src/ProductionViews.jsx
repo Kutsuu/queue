@@ -5,8 +5,8 @@ import {
   Crosshair, Flag, Pencil, Settings2, SkipBack, SkipForward, Trash2, X, ZoomIn, ZoomOut,
 } from 'lucide-react'
 import {
-  DEFAULT_MEMBER_COLOR, EVENT_TIME_ZONE, NOTE_DEPARTMENTS, calculateDrift, currentDateInZone, dateTimeInZone, formatClock, formatSignedOffset, getCueWidths, getPerformanceNumbers, isSceneChangeItem,
-  isValidColor, isValidFullName, isValidQueueDuration, parseDuration, timestampToMillis,
+  DEFAULT_MEMBER_COLOR, EVENT_TIME_ZONE, NOTE_DEPARTMENTS, NOTE_FILTER_DEPARTMENTS, calculateDrift, currentDateInZone, dateTimeInZone, formatClock, formatDuration, formatSignedOffset, formatTimelineMinute, getCueWidths, getPerformanceNumbers, isSceneChangeItem,
+  isValidColor, isValidFullName, isValidQueueDuration, parseDuration, timelineSecondsAtPixel, timestampToMillis,
 } from './timeline'
 
 const DEPARTMENT_LABELS = { ALL: 'KÕIK', HELI: 'HELI', VALGUS: 'VALGUS', VIDEO: 'VIDEO', MUU: 'MUU' }
@@ -172,14 +172,14 @@ function EditorNoteActions({ item, note, noteBusy, onEditNote, onDeleteNote }) {
 
 export function ProductionView({
   mode, event, items, timeline, serverNow, selectedId, onSelect,
-  notesByItem, noteFilter, setNoteFilter,
+  notesByItem, noteFilters, onToggleNoteFilter,
   messages, messagesReady, directoryMembers, eventId, currentName, onSendMessage, chatError,
   onSkipBack, onSkipForward, onTogglePlay, onToggleAutoContinue, onJumpSelected, busy, clockWarning, networkOnline,
 }) {
   const isHost = mode === 'host'
   const current = items[timeline.currentIndex] || null
   const currentNotes = current && !isSceneChangeItem(current)
-    ? (notesByItem[current.id] || []).filter(note => noteFilter === 'ALL' || note.department === 'ALL' || note.department === noteFilter)
+    ? (notesByItem[current.id] || []).filter(note => note.department === 'ALL' || noteFilters.includes(note.department))
     : []
   const nextShows = timeline.currentIndex >= 0
     ? items.slice(timeline.currentIndex + 1).filter(item => !isSceneChangeItem(item))
@@ -255,22 +255,22 @@ export function ProductionView({
         </div>
         {clockWarning && isHost && <div className="q-clock-warning" role="status" title={clockWarning}>Kella sünkroonimine vajab seadistamist</div>}
         {isHost && <div className="q-host-controls">
-          <button className="q-transport" title="Eelmine segment" aria-label="Eelmine segment" disabled={!items.length || busy} onClick={onSkipBack}><SkipBack size={23}/></button>
-          <button className="q-play-button" title={timeline.effectiveStatus === 'playing' ? 'Paus' : 'Esita'} aria-label={timeline.effectiveStatus === 'playing' ? 'Paus' : 'Esita'} disabled={!items.length || busy} onClick={onTogglePlay}>{timeline.effectiveStatus === 'playing' ? <Pause size={24} fill="currentColor"/> : <Play size={24} fill="currentColor"/>}</button>
-          <button className="q-transport" title="Järgmine segment" aria-label="Järgmine segment" disabled={!items.length || busy} onClick={onSkipForward}><SkipForward size={23}/></button>
-          <button className={`q-auto-continue ${timeline.autoContinue ? 'is-active' : ''}`} type="button" title={timeline.autoContinue ? 'Peatu iga segmendi lõpus' : 'Jätka automaatselt järgmise segmendiga'} aria-label={timeline.autoContinue ? 'Automaatne jätkamine sees' : 'Automaatne jätkamine väljas'} aria-pressed={timeline.autoContinue === true} disabled={!items.length || busy} onClick={onToggleAutoContinue}><span>{timeline.autoContinue && <Check size={15}/>}</span></button>
+          <button className="q-transport" title="Eelmine segment" aria-label="Eelmine segment" disabled={!items.length || busy} onClick={onSkipBack}><SkipBack size={22}/></button>
+          <button className={`q-play-button ${timeline.effectiveStatus === 'playing' ? 'is-playing' : 'is-paused'}`} title={timeline.effectiveStatus === 'playing' ? 'Paus' : 'Esita'} aria-label={timeline.effectiveStatus === 'playing' ? 'Paus' : 'Esita'} disabled={!items.length || busy} onClick={onTogglePlay}>{timeline.effectiveStatus === 'playing' ? <Pause size={24} fill="currentColor"/> : <Play size={24} fill="currentColor"/>}</button>
+          <button className="q-transport" title="Järgmine segment" aria-label="Järgmine segment" disabled={!items.length || busy} onClick={onSkipForward}><SkipForward size={22}/></button>
           <button className="q-jump-button" type="button" title="Mine valitud cue juurde" aria-label="Mine valitud cue juurde" disabled={!selectedId || !items.some(item => item.id === selectedId) || selectedId === timeline.itemId || busy} onClick={onJumpSelected}><Crosshair size={21}/></button>
+          <button className={`q-auto-continue ${timeline.autoContinue ? 'is-active' : ''}`} type="button" title={timeline.autoContinue ? 'Peatu iga segmendi lõpus' : 'Jätka automaatselt järgmise segmendiga'} aria-pressed={timeline.autoContinue === true} disabled={!items.length || busy} onClick={onToggleAutoContinue}>AUTOSKIP</button>
         </div>}
       </div>
 
       <CueTimeline items={items} offsets={offsets} timeline={timeline} selectedId={selectedId} onSelect={isHost ? onSelect : undefined} zoom={zoom} setZoom={setZoom} viewportRef={scrollRef}/>
 
       <section className="q-up-next" aria-label="Järgmised esinemised">
-        <nav className="q-note-filters" aria-label="Märkmete filter">{NOTE_DEPARTMENTS.map(department => <button key={department} className={noteFilter === department ? 'is-active' : ''} aria-pressed={noteFilter === department} onClick={() => setNoteFilter(department)}>{DEPARTMENT_LABELS[department] || department}</button>)}<SearchControl value={searchQuery} onChange={setSearchQuery} open={searchOpen} setOpen={setSearchOpen}/></nav>
+        <nav className="q-note-filters" aria-label="Märkmete filter">{NOTE_FILTER_DEPARTMENTS.map(department => <button key={department} className={noteFilters.includes(department) ? 'is-active' : ''} aria-pressed={noteFilters.includes(department)} onClick={() => onToggleNoteFilter(department)}>{DEPARTMENT_LABELS[department] || department}</button>)}<SearchControl value={searchQuery} onChange={setSearchQuery} open={searchOpen} setOpen={setSearchOpen}/></nav>
         <div className="q-upcoming-list">{visibleShows.map(item => {
           const index = items.findIndex(row => row.id === item.id)
           const number = items.slice(0, index + 1).filter(row => !isSceneChangeItem(row)).length
-          const notes = (notesByItem[item.id] || []).filter(note => noteFilter === 'ALL' || note.department === 'ALL' || note.department === noteFilter)
+          const notes = (notesByItem[item.id] || []).filter(note => note.department === 'ALL' || noteFilters.includes(note.department))
           const isCurrent = index === timeline.currentIndex
           const isPast = timeline.currentIndex >= 0 && index < timeline.currentIndex
           return <article key={item.id} className={`q-queue-row ${isHost && selectedId === item.id ? 'is-selected' : ''} ${isCurrent ? 'is-current' : ''} ${isPast ? 'is-past' : ''}`} style={{ '--cue-color': item.color || DEFAULT_COLORS[index % DEFAULT_COLORS.length] }}>
@@ -302,14 +302,59 @@ export function CountdownView({ items, timeline, offline, onExit }) {
   const timerClass = remaining === 0 ? 'is-ended' : remaining <= 30 ? 'is-warning' : ''
   const displayTime = formatTimer(remaining)
   const onExitRef = useRef(onExit)
+  const wakeLockRef = useRef(null)
+  const [wakeLockUnavailable, setWakeLockUnavailable] = useState(false)
   onExitRef.current = onExit
   useEffect(() => {
     const handleKey = event => { if (event.key === 'Escape') onExitRef.current() }
     window.addEventListener('keydown', handleKey)
     return () => window.removeEventListener('keydown', handleKey)
   }, [])
+  useEffect(() => {
+    let active = true
+    let requesting = false
+    const requestWakeLock = async () => {
+      if (!active || document.visibilityState !== 'visible' || requesting) return
+      if (!('wakeLock' in navigator) || typeof navigator.wakeLock?.request !== 'function') {
+        setWakeLockUnavailable(true)
+        return
+      }
+      if (wakeLockRef.current && !wakeLockRef.current.released) return
+      requesting = true
+      try {
+        const sentinel = await navigator.wakeLock.request('screen')
+        if (!active) {
+          await sentinel.release()
+          return
+        }
+        wakeLockRef.current = sentinel
+        setWakeLockUnavailable(false)
+        sentinel.addEventListener('release', () => {
+          if (wakeLockRef.current === sentinel) wakeLockRef.current = null
+          if (active && document.visibilityState === 'visible') setWakeLockUnavailable(true)
+        }, { once: true })
+      } catch {
+        if (active) setWakeLockUnavailable(true)
+      } finally {
+        requesting = false
+      }
+    }
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') void requestWakeLock()
+    }
+    void requestWakeLock()
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    return () => {
+      active = false
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+      const sentinel = wakeLockRef.current
+      wakeLockRef.current = null
+      if (sentinel && !sentinel.released) void sentinel.release().catch(() => {})
+    }
+  }, [])
   return <main className="q-countdown-screen">
     {offline && <div className="q-offline-alert" role="alert">Internetiühendus katkes. Taimer töötab seni kohaliku ajastuse järgi.</div>}
+    {wakeLockUnavailable && <div className="q-wake-lock-warning" role="status">See brauser ei luba ekraani ärkvel hoida.</div>}
     <output className={`q-countdown-time ${timerClass} ${current && isSceneChangeItem(current) ? 'is-transition' : ''}`} role="timer" aria-live="off" aria-label={current && isSceneChangeItem(current) ? 'Lava vahetus' : `Aega esinemise lõpuni ${displayTime}`}>{displayTime}</output>
     <div className="q-countdown-controls"><FullscreenButton/><button className="q-fullscreen-button" type="button" onClick={onExit} aria-label="Välju taimerist" title="Välju taimerist"><X size={17}/></button></div>
   </main>
@@ -342,6 +387,7 @@ function CueTimeline({ items, offsets, timeline, selectedId, onSelect, zoom, set
     })
   }, [widths])
   const contentWidth = widths.reduce((sum, itemWidth) => sum + itemWidth, 0) + Math.max(0, widths.length - 1) * CUE_GAP_PX
+  const totalSeconds = timeline.starts.at(-1)?.end || 0
   const actNumbers = getPerformanceNumbers(items)
   const currentStart = timeline.currentIndex >= 0 ? offsets[timeline.currentIndex] || 0 : 0
   const elapsed = Math.max(0, timeline.positionSeconds - currentStart)
@@ -351,11 +397,14 @@ function CueTimeline({ items, offsets, timeline, selectedId, onSelect, zoom, set
     leftOfMarker += Math.min(1, Math.max(0, elapsed / Math.max(timeline.starts[timeline.currentIndex]?.duration || 0, 0.001))) * widths[timeline.currentIndex]
   }
   const translate = width / 2 - leftOfMarker
-  const totalSeconds = timeline.starts[timeline.starts.length - 1]?.end || 0
-  const visibleMinutes = width / (scale * 60)
-  const firstMinute = Math.max(0, Math.floor((timeline.positionSeconds - visibleMinutes / 2) / 60) - 1)
-  const lastMinute = Math.ceil((timeline.positionSeconds + visibleMinutes / 2) / 60) + 1
-  const labelInterval = [1, 2, 5, 10, 15, 30, 60].find(interval => interval * 60 * scale >= 42) || 60
+  const leftLanePixel = -translate
+  const rightLanePixel = width - translate
+  const leftSeconds = timelineSecondsAtPixel(leftLanePixel, timeline.starts, segmentPixelStarts, widths, contentWidth, scale)
+  const rightSeconds = timelineSecondsAtPixel(rightLanePixel, timeline.starts, segmentPixelStarts, widths, contentWidth, scale)
+  const firstMinute = Math.max(0, Math.floor(leftSeconds / 60) - 1)
+  const lastMinute = Math.max(firstMinute, Math.ceil(rightSeconds / 60) + 1)
+  const labelWidth = timeline.positionSeconds >= 3600 ? 74 : 43
+  const labelInterval = [1, 2, 5, 10, 15, 30, 60].find(interval => interval * 60 * scale >= labelWidth) || 60
   const minuteTicks = []
   for (let minute = firstMinute; minute <= lastMinute; minute += 1) {
     const seconds = minute * 60
@@ -370,12 +419,16 @@ function CueTimeline({ items, offsets, timeline, selectedId, onSelect, zoom, set
       : contentWidth + Math.max(0, seconds - totalSeconds) * scale
     minuteTicks.push({ minute, tickX, major: minute % labelInterval === 0 })
   }
+  const activeSegment = timeline.currentIndex >= 0 ? timeline.starts[timeline.currentIndex] : null
+  const remainingSeconds = activeSegment
+    ? Math.max(0, Math.ceil(activeSegment.end - timeline.positionSeconds))
+    : null
   return <section className="q-cue-timeline" aria-label="Ajatelg">
     <div className="q-timeline-tools"><button title="Vähenda suumi" aria-label="Vähenda suumi" onClick={() => setZoom(value => Math.max(.55, Number((value - .25).toFixed(2))))}><ZoomOut size={15}/></button><button title="Suurenda suumi" aria-label="Suurenda suumi" onClick={() => setZoom(value => Math.min(6, Number((value + .25).toFixed(2))))}><ZoomIn size={15}/></button></div>
     <div className="q-cue-viewport" ref={viewportRef}>
       <div className="q-time-ruler" aria-hidden="true">
         {minuteTicks.map(({ minute, tickX, major }) => <span key={minute} className={`q-time-tick ${major ? 'is-major' : ''}`} style={{ left: tickX + translate }}>
-          {major && <span>{formatMinuteMark(minute)}</span>}
+          {major && <span>{formatTimelineMinute(minute)}</span>}
         </span>)}
       </div>
       <div className="q-cue-lane" style={{ gap: `${CUE_GAP_PX}px`, transform: `translateX(${translate}px)` }}>
@@ -383,12 +436,9 @@ function CueTimeline({ items, offsets, timeline, selectedId, onSelect, zoom, set
       </div>
       <div className="q-playhead"><i/></div>
       <div className="q-playhead-time">{formatClock(Math.floor(timeline.positionMs / 1000))}</div>
+      {remainingSeconds !== null && <output className="q-end-countdown" style={{ left: segmentPixelStarts[timeline.currentIndex] + widths[timeline.currentIndex] + translate }} role="timer" aria-live="off" aria-label={`Järgmise segmendini ${formatDuration(remainingSeconds)}`}>-{formatDuration(remainingSeconds)}</output>}
     </div>
   </section>
-}
-
-function formatMinuteMark(minute) {
-  return `${String(minute).padStart(2, '0')}:00`
 }
 
 export function QueueEditor({ event, items, queueRevision, notesByItem = {}, noteBusy, onAddNote, onEditNote, onDeleteNote, onSaveItem, onDeleteItem, onMoveItem, onAddItem, onSaveEvent }) {
@@ -536,9 +586,11 @@ function EventSettingsEditor({ event, onSave }) {
   </div><button className="q-button q-button--quiet" disabled={!event || !dirty || saving} onClick={async () => { setSaving(true); try { if (await onSave(value)) setDraft(value) } finally { setSaving(false) } }}><Save size={15}/>{saving ? 'Salvestan…' : 'Salvesta'}</button></section>
 }
 
-export function SettingsPage({ events, selectedEventId, member, directoryMembers, directoryError, onSelectEvent, onCreateEvent, onSignOut, onSaveProfile }) {
+export function SettingsPage({ events, selectedEventId, member, directoryMembers, directoryError, networkOnline, bugReportBusy, onSelectEvent, onCreateEvent, onSignOut, onSaveProfile, onSendBugReport }) {
   const [fullName, setFullName] = useState(member?.fullName || '')
   const [color, setColor] = useState(isValidColor(member?.color) ? member.color : DEFAULT_MEMBER_COLOR)
+  const [bugReport, setBugReport] = useState('')
+  const [bugReportSent, setBugReportSent] = useState(false)
   const [savingProfile, setSavingProfile] = useState(false)
   const [now, setNow] = useState(Date.now())
   useEffect(() => {
@@ -552,7 +604,19 @@ export function SettingsPage({ events, selectedEventId, member, directoryMembers
   const currentColor = isValidColor(member?.color) ? member.color : DEFAULT_MEMBER_COLOR
   const profileChanged = fullName.trim() !== (member?.fullName || '') || color !== currentColor
   const sorted = [...events].sort((a, b) => (timestampToMillis(a.startAt) ?? getStartMillis(a) ?? 0) - (timestampToMillis(b.startAt) ?? getStartMillis(b) ?? 0))
-  const sortedMembers = [...directoryMembers].sort((a, b) => String(a.fullName || '').localeCompare(String(b.fullName || ''), 'et'))
+  const roster = new Map(directoryMembers.map(person => [person.uid, person]))
+  if (member?.uid && !roster.has(member.uid)) roster.set(member.uid, { uid: member.uid, fullName: member.fullName })
+  const sortedMembers = [...roster.values()].sort((a, b) => String(a.fullName || '').localeCompare(String(b.fullName || ''), 'et'))
+  const submitBugReport = async event => {
+    event.preventDefault()
+    const description = bugReport.trim()
+    if (!description || description.length > 2000 || bugReportBusy || !networkOnline) return
+    setBugReportSent(false)
+    if (await onSendBugReport(description)) {
+      setBugReport('')
+      setBugReportSent(true)
+    }
+  }
   return <section className="q-settings-page">
     <div className="q-settings-page-head"><h1>Sätted</h1></div>
     <section className="q-settings-section">
@@ -596,12 +660,21 @@ export function SettingsPage({ events, selectedEventId, member, directoryMembers
         <div className="q-account-actions"><button className="q-button q-button--quiet" onClick={onSignOut}><LogOut size={15}/>Logi välja</button><button className="q-button q-button--primary" disabled={!profileChanged || !isValidFullName(fullName) || fullName.trim().length > 120 || savingProfile} onClick={async () => { setSavingProfile(true); try { await onSaveProfile({ fullName, color }) } finally { setSavingProfile(false) } }}>{savingProfile ? 'Salvestan…' : 'Salvesta'}</button></div>
       </div>
     </section>
+    <section className="q-settings-section">
+      <header className="q-settings-section-head"><h2>Bug report</h2></header>
+      <form className="q-bug-report" onSubmit={submitBugReport}>
+        <label htmlFor="q-bug-report-body">Kirjelda probleemi<textarea id="q-bug-report-body" value={bugReport} onChange={event => { setBugReport(event.target.value); setBugReportSent(false) }} maxLength={2000} rows={4} placeholder="Mis juhtus ja kuidas seda korrata? Ära lisa paroole ega muud tundlikku infot." required/></label>
+        <div className="q-bug-report-footer"><span>{bugReport.length}/2000</span><button className="q-button q-button--primary" type="submit" disabled={!bugReport.trim() || bugReportBusy || !networkOnline}><Send size={15}/>{bugReportBusy ? 'Saadan…' : 'Saada report'}</button></div>
+        {!networkOnline && <p className="q-alert" role="status">Bug reporti saatmiseks on vaja internetiühendust.</p>}
+        {bugReportSent && <p className="q-success" role="status">Bug report saadetud.</p>}
+      </form>
+    </section>
   </section>
 }
 
 function getMemberPresence(member, now) {
   const lastSeen = timestampToMillis(member.lastSeenAt)
-  if (lastSeen === null) return { state: 'unknown', label: 'Pole veel võrgus olnud' }
+  if (lastSeen === null) return { state: 'unknown', label: 'Viimane aktiivsus teadmata' }
   const age = Math.max(0, now - lastSeen)
   if (age <= 3 * 60_000) return { state: 'online', label: 'Võrgus' }
   if (age <= 24 * 60 * 60_000) {

@@ -1,4 +1,5 @@
 export const NOTE_DEPARTMENTS = ['ALL', 'HELI', 'VALGUS', 'VIDEO', 'MUU']
+export const NOTE_FILTER_DEPARTMENTS = ['HELI', 'VALGUS', 'VIDEO', 'MUU']
 export const EVENT_TIME_ZONE = 'Europe/Tallinn'
 export const DEFAULT_MEMBER_COLOR = '#c7cbd2'
 
@@ -72,6 +73,15 @@ export function formatClock(value) {
   return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
 }
 
+export function formatTimelineMinute(minute) {
+  const safeMinute = Math.max(0, Math.floor(Number(minute) || 0))
+  const hours = Math.floor(safeMinute / 60)
+  const minutes = safeMinute % 60
+  return hours > 0
+    ? `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`
+    : `${String(safeMinute).padStart(2, '0')}:00`
+}
+
 export function formatSignedOffset(milliseconds) {
   if (!Number.isFinite(milliseconds)) return ''
   if (Math.abs(milliseconds) < 500) return formatDuration(0)
@@ -95,6 +105,25 @@ export function getSegmentStarts(items = []) {
     cursor += duration
     return { start, end: cursor, duration }
   })
+}
+
+export function timelineSecondsAtPixel(pixel, starts, segmentPixelStarts, widths, contentWidth, scale) {
+  const totalSeconds = starts.at(-1)?.end || 0
+  if (pixel <= 0) return 0
+  if (pixel >= contentWidth) return totalSeconds + (pixel - contentWidth) / scale
+  for (let index = 0; index < widths.length; index += 1) {
+    const segmentStart = segmentPixelStarts[index]
+    const segmentEnd = segmentStart + widths[index]
+    const segment = starts[index]
+    if (!segment) return totalSeconds
+    if (pixel <= segmentEnd) {
+      const progress = Math.min(1, Math.max(0, (pixel - segmentStart) / Math.max(widths[index], 0.001)))
+      return segment.start + progress * segment.duration
+    }
+    const nextStart = segmentPixelStarts[index + 1]
+    if (nextStart !== undefined && pixel < nextStart) return segment.end
+  }
+  return totalSeconds
 }
 
 export function getCueWidths(items = [], zoom = 1, pixelsPerSecond = 0.42) {

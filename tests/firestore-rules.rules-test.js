@@ -102,6 +102,24 @@ test('Firestore Rules enforce member allow-list, scoped notes, queue validation,
   await assert.rejects(setDoc(doc(collection(member.db, 'events', eventId, 'messages')), {
     body: 'Spoofed color', audience: 'all', author: 'Renamed Member', authorId: member.user.uid, authorColor: '#ff0000', createdAt: serverTimestamp(),
   }), error => error.code === 'permission-denied')
+  const bugReportRef = doc(member.db, 'bugReports', `report-${runId}`)
+  await setDoc(bugReportRef, {
+    body: 'The timeline ruler labels overlap on a narrow display.',
+    authorId: member.user.uid,
+    author: 'Renamed Member',
+    eventId,
+    createdAt: serverTimestamp(),
+  })
+  await assert.rejects(getDoc(bugReportRef), error => error.code === 'permission-denied')
+  await assert.rejects(getDocs(collection(member.db, 'bugReports')), error => error.code === 'permission-denied')
+  await assert.rejects(updateDoc(bugReportRef, { body: 'Changed report' }), error => error.code === 'permission-denied')
+  await assert.rejects(deleteDoc(bugReportRef), error => error.code === 'permission-denied')
+  await assert.rejects(setDoc(doc(outsider.db, 'bugReports', `outsider-${runId}`), {
+    body: 'Unauthorized report', authorId: outsider.user.uid, author: 'Outsider', eventId: '', createdAt: serverTimestamp(),
+  }), error => error.code === 'permission-denied')
+  await assert.rejects(setDoc(doc(member.db, 'bugReports', `spoofed-${runId}`), {
+    body: 'Wrong author', authorId: member.user.uid, author: 'Someone Else', eventId: '', createdAt: serverTimestamp(),
+  }), error => error.code === 'permission-denied')
   await assert.rejects(setDoc(doc(collection(member.db, 'events', eventId, 'items')), {
     title: 'Zero length', performer: '', description: '', duration: '00:00', type: 'performance', order: 1, color: '#7645ff', createdAt: serverTimestamp(),
   }), error => error.code === 'permission-denied')

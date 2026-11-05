@@ -8,7 +8,7 @@ import {
 import { onValue, ref } from 'firebase/database'
 import { auth, db, isFirebaseConfigured, isServerClockConfigured, realtimeDb } from './firebase'
 import {
-  DEFAULT_MEMBER_COLOR, NOTE_DEPARTMENTS, deriveTimeline, getSegmentStarts,
+  DEFAULT_MEMBER_COLOR, NOTE_DEPARTMENTS, NOTE_FILTER_DEPARTMENTS, deriveTimeline, getSegmentStarts,
   dateTimeInZone, isSceneChangeItem, isValidColor, isValidFullName, isValidQueueDuration, normalizeLegacyDepartment,
   readTimelineState, sortNotesByDepartment, timestampToMillis,
 } from './timeline'
@@ -34,11 +34,17 @@ function initialEventId() {
   try { return localStorage.getItem('queue-event-id') || '' } catch { return '' }
 }
 
-function initialNoteFilter() {
+function initialNoteFilters() {
   try {
-    const saved = localStorage.getItem('queue-note-filter')
-    return NOTE_QUERY_DEPARTMENTS.includes(saved) ? saved : 'ALL'
-  } catch { return 'ALL' }
+    const saved = localStorage.getItem('queue-note-filters')
+    if (saved) {
+      const parsed = JSON.parse(saved)
+      if (Array.isArray(parsed)) return [...new Set(parsed.filter(value => NOTE_FILTER_DEPARTMENTS.includes(value)))]
+    }
+    const legacy = localStorage.getItem('queue-note-filter')
+    if (legacy && legacy !== 'ALL' && NOTE_FILTER_DEPARTMENTS.includes(legacy)) return [legacy]
+    return [...NOTE_FILTER_DEPARTMENTS]
+  } catch { return [...NOTE_FILTER_DEPARTMENTS] }
 }
 
 function orderEvents(values) {
@@ -64,13 +70,19 @@ function memberProvisionError(error) {
 
 async function createOwnMemberProfile(database, account, fullName) {
   const memberRef = doc(database, 'members', account.uid)
+  const directoryRef = doc(database, 'memberDirectory', account.uid)
   const email = String(account.email || '').trim().toLowerCase()
-  return runTransaction(database, async transaction => {
+  const created = await runTransaction(database, async transaction => {
     const current = await transaction.get(memberRef)
     if (current.exists()) return false
     transaction.set(memberRef, { email, fullName: fullName.trim(), enabled: true })
     return true
   })
+  if (created) {
+    try { await setDoc(directoryRef, { fullName: fullName.trim(), lastSeenAt: serverTimestamp() }) }
+    catch { /* Presence publication will retry after membership is established. */ }
+  }
+  return created
 }
 
 function authErrorMessage(error) {
@@ -169,7 +181,7 @@ function App() {
   const [messagesReady, setMessagesReady] = useState(false)
   const [mode, setModeState] = useState(initialMode)
   const [selectedId, setSelectedId] = useState('')
-  const [noteFilter, setNoteFilterState] = useState(initialNoteFilter)
+  const [noteFilters, setNoteFiltersState] = useState(initialNoteFilters)
   const [noteItem, setNoteItem] = useState(null)
   const [showCreateEvent, setShowCreateEvent] = useState(false)
   const [eventDialogError, setEventDialogError] = useState('')
@@ -179,6 +191,7 @@ function App() {
   const [authBusy, setAuthBusy] = useState(false)
   const [operationBusy, setOperationBusy] = useState(false)
   const [noteBusy, setNoteBusy] = useState(false)
+  const [bugReportBusy, setBugReportBusy] = useState(false)
   const [clockNow, setClockNow] = useState(Date.now())
   const [clockOffset, setClockOffset] = useState(null)
   const [clockError, setClockError] = useState('')
@@ -210,9 +223,15 @@ function App() {
     try { localStorage.setItem('queue-mode', next) } catch { /* Storage is optional. */ }
   }, [])
 
-  const setNoteFilter = useCallback(next => {
-    setNoteFilterState(next)
-    try { localStorage.setItem('queue-note-filter', next) } catch { /* Storage is optional. */ }
+  const toggleNoteFilter = useCallback(department => {
+    if (!NOTE_FILTER_DEPARTMENTS.includes(department)) return
+    setNoteFiltersState(current => {
+      const next = current.includes(department)
+        ? current.filter(value => value !== department)
+        : [...NOTE_FILTER_DEPARTMENTS.filter(value => current.includes(value) || value === department)]
+      try { localStorage.setItem('queue-note-filters', JSON.stringify(next)) } catch { /* Storage is optional. */ }
+      return next
+    })
   }, [])
 
   const showToast = useCallback(message => {
@@ -546,14 +565,14 @@ function App() {
     for (const note of notes) {
       const department = normalizeLegacyDepartment(note)
       if (!department || note.audience === 'private') continue
-      const visible = noteFilter === 'ALL' || department === 'ALL' || department === noteFilter
+      const visible = department === 'ALL' || noteFilters.includes(department)
       if (!visible) continue
       if (!output[note.itemId]) output[note.itemId] = []
       output[note.itemId].push({ ...note, department })
     }
     for (const itemId of Object.keys(output)) output[itemId] = sortNotesByDepartment(output[itemId])
     return output
-  }, [notes, noteFilter])
+  }, [notes, noteFilters])
   const allNotesByItem = useMemo(() => {
     const output = {}
     for (const note of notes) {
@@ -782,6 +801,32 @@ function App() {
     } catch (error) {
       showToast(error.code === 'permission-denied' ? 'Firebase Rules keelas sõnumi saatmise.' : 'Sõnumi saatmine ebaõnnestus.')
       return false
+    }
+  }
+
+  async function sendBugReport(body) {
+    const description = String(body || '').trim()
+    if (!db || !user || !member || !description || description.length > 2000) return false
+    if (!networkOnline) {
+      showToast('Bug reporti ei saadetud: internetiühendus puudub.')
+      return false
+    }
+    if (bugReportBusy) return false
+    setBugReportBusy(true)
+    try {
+      await addDoc(collection(db, 'bugReports'), {
+        body: description,
+        authorId: user.uid,
+        author: member.fullName,
+        eventId: String(eventId || ''),
+        createdAt: serverTimestamp(),
+      })
+      return true
+    } catch (error) {
+      showToast(error.code === 'permission-denied' ? 'Firebase Rules keelas bug reporti saatmise.' : 'Bug reporti saatmine ebaõnnestus.')
+      return false
+    } finally {
+      setBugReportBusy(false)
     }
   }
 
@@ -1035,7 +1080,7 @@ function App() {
     {eventsError && <div className="q-banner" role="alert">{eventsError}</div>}
     {itemsError && <div className="q-banner" role="alert">{itemsError}</div>}
     {notesError && <div className="q-banner" role="alert">{notesError}</div>}
-    {mode === 'settings' ? <SettingsPage events={events} selectedEventId={eventId} member={member} directoryMembers={directoryMembers} directoryError={directoryError} onSelectEvent={id => { setEventId(id); setMode('production') }} onCreateEvent={() => { setEventDialogError(''); setShowCreateEvent(true) }} onSignOut={logout} onSaveProfile={saveMemberSettings}/> : !event ? <section className="q-empty-workspace"><h1>{eventsReady ? 'Tööruumi pole valitud' : 'Laen tööruume…'}</h1>{eventsReady && <button className="q-button q-button--primary" onClick={() => setMode('settings')}><Settings2 size={15}/>Ava tööruumid</button>}</section> : mode === 'edit' ? <QueueEditor event={eventDoc || event} items={items} notesByItem={allNotesByItem} noteBusy={noteBusy} onAddNote={item => setNoteItem({ item, note: null })} onEditNote={(item, note) => setNoteItem({ item, note })} onDeleteNote={deleteNote} queueRevision={event.queueRevision} onSaveItem={saveItem} onDeleteItem={deleteItem} onMoveItem={moveItem} onAddItem={addQueueItem} onSaveEvent={saveEvent}/> : (mode === 'production' || mode === 'host') ? (
+    {mode === 'settings' ? <SettingsPage events={events} selectedEventId={eventId} member={member} directoryMembers={directoryMembers} directoryError={directoryError} networkOnline={networkOnline} onSelectEvent={id => { setEventId(id); setMode('production') }} onCreateEvent={() => { setEventDialogError(''); setShowCreateEvent(true) }} onSignOut={logout} onSaveProfile={saveMemberSettings} onSendBugReport={sendBugReport} bugReportBusy={bugReportBusy}/> : !event ? <section className="q-empty-workspace"><h1>{eventsReady ? 'Tööruumi pole valitud' : 'Laen tööruume…'}</h1>{eventsReady && <button className="q-button q-button--primary" onClick={() => setMode('settings')}><Settings2 size={15}/>Ava tööruumid</button>}</section> : mode === 'edit' ? <QueueEditor event={eventDoc || event} items={items} notesByItem={allNotesByItem} noteBusy={noteBusy} onAddNote={item => setNoteItem({ item, note: null })} onEditNote={(item, note) => setNoteItem({ item, note })} onDeleteNote={deleteNote} queueRevision={event.queueRevision} onSaveItem={saveItem} onDeleteItem={deleteItem} onMoveItem={moveItem} onAddItem={addQueueItem} onSaveEvent={saveEvent}/> : (mode === 'production' || mode === 'host') ? (
       !itemsReady ? <div className="q-empty-workspace">Laen järjekorda…</div> : <>
         <ProductionView
           mode={mode}
@@ -1046,8 +1091,8 @@ function App() {
           selectedId={selectedId}
           onSelect={setSelectedId}
           notesByItem={notesByItem}
-          noteFilter={noteFilter}
-          setNoteFilter={setNoteFilter}
+          noteFilters={noteFilters}
+          onToggleNoteFilter={toggleNoteFilter}
           messages={messages}
           directoryMembers={directoryMembers}
           messagesReady={messagesReady}

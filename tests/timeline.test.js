@@ -1,8 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  calculateDrift, dateTimeInZone, deriveTimeline, formatClock, getCueWidths, getPerformanceNumbers,
-  getSegmentStarts, isValidQueueDuration, parseDuration,
+  calculateDrift, dateTimeInZone, deriveTimeline, formatClock, formatTimelineMinute, getCueWidths, getPerformanceNumbers,
+  getSegmentStarts, isValidQueueDuration, parseDuration, timelineSecondsAtPixel,
   sortNotesByDepartment,
 } from '../src/timeline.js'
 
@@ -26,6 +26,30 @@ test('queue segment positions accumulate performances and transitions', () => {
   ])
   assert.deepEqual(starts.map(({ start, end }) => [start, end]), [[0, 180], [180, 240], [240, 390]])
   assert.equal(formatClock(starts[2].start), '00:04:00')
+})
+
+test('timeline ruler labels switch from elapsed minutes to hours after 60 minutes', () => {
+  assert.equal(formatTimelineMinute(0), '00:00')
+  assert.equal(formatTimelineMinute(59), '59:00')
+  assert.equal(formatTimelineMinute(60), '01:00:00')
+  assert.equal(formatTimelineMinute(72), '01:12:00')
+  assert.equal(formatTimelineMinute(125), '02:05:00')
+})
+
+test('timeline ruler keeps pixel time aligned through transition gaps and extends past the final cue', () => {
+  const starts = getSegmentStarts([
+    { duration: '01:00' },
+    { type: 'scene-change', duration: '00:30' },
+    { duration: '01:00' },
+  ])
+  const widths = [25.2, 12.6, 25.2]
+  const pixelStarts = [0, 27.2, 41.8]
+  const contentWidth = 67
+  const scale = 0.42
+  assert.equal(timelineSecondsAtPixel(0, starts, pixelStarts, widths, contentWidth, scale), 0)
+  assert.equal(timelineSecondsAtPixel(12.6, starts, pixelStarts, widths, contentWidth, scale), 30)
+  assert.equal(timelineSecondsAtPixel(26.2, starts, pixelStarts, widths, contentWidth, scale), 60)
+  assert.equal(timelineSecondsAtPixel(contentWidth + scale * 120, starts, pixelStarts, widths, contentWidth, scale), 270)
 })
 
 test('paused timeline stays still even when its old anchor is in the past', () => {

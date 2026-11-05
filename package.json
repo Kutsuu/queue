@@ -8,7 +8,7 @@
     "start": "vite --host 127.0.0.1",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node --test tests/timeline.test.js",
+    "test": "node --test tests/timeline.test.js tests/production-render.test.js",
     "test:rules": "node --test tests/firestore-rules.rules-test.js"
   },
   "dependencies": {
